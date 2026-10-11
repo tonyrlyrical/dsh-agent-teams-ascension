@@ -62,6 +62,20 @@ export interface ActivityTeam {
   readonly tasks: readonly ActivityTask[]
   readonly messageCount: number
   readonly captainInbox: readonly ActivityMessage[]
+  readonly operatingMode?: 'normal' | 'economy'
+  readonly maxConcurrentWorkers?: number
+  readonly tokenBudget?: number
+  readonly budgetExceeded?: boolean
+  readonly tokenAccounting?: {
+    readonly exactTotalTokens: number
+    readonly exactInputTokens: number
+    readonly exactOutputTokens: number
+    readonly exactCacheReadTokens: number
+    readonly exactReasoningTokens: number
+    readonly estimatedTokensTotal: number
+    readonly totalInvocations: number
+    readonly exactCoveragePercentage: number
+  }
 }
 
 /** A successfully-created conversation card that currently needs updates. */

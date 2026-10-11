@@ -838,6 +838,9 @@ Working rules:
  */
 export function memberWelcome(team: TeamState, memberName: string): string {
   const assigned = assignedNonTerminalCount(team, memberName)
+  if (team.operatingMode === 'economy') {
+    return `Joined team "${team.name}" as ${memberName}. ${assigned} pending task(s). Wait for assignment and yield turn.`
+  }
   return `You have joined the team "${team.name}" as a member. Wait for an automatic assignment or a captain message.
 Current team status: ${team.tasks.length} task(s), ${assigned} pending task(s) assigned to you.
 Do not start work until the scheduler or captain assigns a task in this turn.`

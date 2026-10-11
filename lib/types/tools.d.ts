@@ -36,6 +36,10 @@ export interface ToolsConfig {
     profiles: Record<string, import('./profiles.ts').TeamProfileConfig>;
     /** Owner-declared reusable member tool policies, keyed by policy id (#59). */
     toolPolicies: Record<string, MemberToolPolicy>;
+    /** Default operating mode when not specified in team creation (default 'normal'). */
+    defaultOperatingMode?: 'normal' | 'economy';
+    /** Global worker concurrency cap default. */
+    maxConcurrentWorkers?: number;
 }
 /** Browser/UI mutations allowed while a plan is waiting for approval. */
 export type StagedPlanMutation = {

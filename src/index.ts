@@ -38,12 +38,22 @@ import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { collectArchivedTeamsActivity, collectTeamsActivity } from './snapshot.ts'
-import { findTeamByCaptain } from './state.ts'
+import { findTeamByCaptain, findTeamByParticipant, readTeam, withTeamLock, writeTeam } from './state.ts'
 import { leadIdentityOfAsync } from './lineage.ts'
 import { formatProfilesForPrompt, type TeamProfileConfig } from './profiles.ts'
 import { parseToolPolicies, type MemberToolPolicy } from './tool-policies.ts'
 import { installTeamCapabilities } from './capabilities.ts'
 import { TEAM_TOOL_NAMES } from './tool-names.ts'
+import {
+  exportReportToCsv,
+  generateTeamTokenReport,
+  normalizeTokenUsage,
+  readTokenLedger,
+  recordTokenUsageEvent,
+  tokenEventKey,
+  type TokenUsageEvent,
+} from './token-accounting.ts'
+import { CAPTAIN_KEY } from './state.ts'
 
 import { authenticatedWebRoutes, readJsonRequest, RequestBodyError, type BrowserRequestGate, type WebRouteHost } from './web-routes.ts'
 
@@ -108,6 +118,10 @@ export interface Config {
    * Disable to keep the natural-language trigger as the only entry point.
    */
   slashCommand?: boolean
+  /** Default operating mode when not specified in team creation (default 'normal'). */
+  defaultOperatingMode?: 'normal' | 'economy'
+  /** Global worker concurrency cap default. */
+  maxConcurrentWorkers?: number
 }
 
 // `z.object()` has an implicit `{}` default in Schemastery.  Fallback routes
@@ -172,6 +186,8 @@ export const Config: z<Config> = z.object({
   maxMembers: z.natural().min(1).default(8),
   promptSectionOrder: z.natural().default(117),
   slashCommand: z.boolean().default(true),
+  defaultOperatingMode: z.union([z.const('normal'), z.const('economy')]).default('normal'),
+  maxConcurrentWorkers: z.natural().min(1),
 })
 
 /** The model-facing usage policy: when and how to drive AgentTeams. */
@@ -204,6 +220,8 @@ export function apply(ctx: Context, config: Config): void {
     // Owner configuration is validated once, at mount: an empty or malformed
     // policy must never reach a member creation path.
     toolPolicies: parseToolPolicies(config.toolPolicies),
+    defaultOperatingMode: config.defaultOperatingMode ?? 'normal',
+    maxConcurrentWorkers: config.maxConcurrentWorkers,
   }
 
   // Provider registration is a sibling plugin's effect (`subagent-spawn` /
@@ -238,6 +256,115 @@ export function apply(ctx: Context, config: Config): void {
     })
     installAgentTeamsGestureBoundary(ctx, () => config.profiles ?? {})
   }
+
+  // Live token accounting telemetry: intercept session assistant messages
+  // and record authoritative provider token usage directly into the team ledger.
+  ctx.on('session/event', async (session, event) => {
+    try {
+      if (!event || (event as any).type !== 'assistant/message') return
+      const rawData = (event as any).data ?? {}
+      const rawUsage = rawData.usage
+      if (!rawUsage) return
+
+      const norm = normalizeTokenUsage(rawUsage)
+      const workspace = (session as any).header?.cwd ?? process.cwd()
+      const stateRoot = join(workspace, resolved.stateDir)
+
+      // Lookup team by participant session id (or parent session id for child subagents)
+      let team = await findTeamByParticipant(stateRoot, session.id)
+      if (!team && (session as any).header?.parentSession) {
+        team = await findTeamByParticipant(stateRoot, (session as any).header.parentSession)
+      }
+      if (!team) return
+
+      // Determine agent info
+      let agentName = 'unknown'
+      let role = 'member'
+      let provider = ''
+      let model = ''
+      let activeTaskId: string | undefined
+      let activeAttemptId: string | undefined
+
+      if (team.captainSessionId === session.id) {
+        agentName = CAPTAIN_KEY
+        role = 'captain'
+      } else {
+        const member = team.members.find(
+          (m) => m.id === session.id || m.id === (session as any).header?.parentSession,
+        )
+        if (member) {
+          agentName = member.name
+          role = member.role ?? 'member'
+          provider = member.provider ?? ''
+          model = member.model ?? ''
+          const activeTask = team.tasks.find(
+            (t) => t.assignee === member.name && t.status === 'in_progress',
+          )
+          if (activeTask) {
+            activeTaskId = activeTask.id
+            activeAttemptId = activeTask.attemptId
+          }
+        }
+      }
+
+      if (rawData.provider) provider = String(rawData.provider)
+      if (rawData.model) model = String(rawData.model)
+
+      const toolCallsCount = Array.isArray(rawData.message?.content)
+        ? rawData.message.content.filter((c: any) => c?.type === 'tool_call' || c?.type === 'tool-call').length
+        : 0
+
+      const usageEvent: TokenUsageEvent = {
+        id: `${session.id}:${rawData.turn ?? 0}:${rawData.step ?? 0}`,
+        teamId: team.id,
+        taskId: activeTaskId,
+        attemptId: activeAttemptId,
+        agentId: session.id,
+        agentName,
+        role,
+        sessionId: session.id,
+        provider: provider || 'unknown',
+        model: model || 'unknown',
+        turn: typeof rawData.turn === 'number' ? rawData.turn : 0,
+        step: typeof rawData.step === 'number' ? rawData.step : 0,
+        timestamp: typeof (event as any).time === 'number' ? (event as any).time : Date.now(),
+        durationMs: 0,
+        outcome: 'completed',
+        quality: norm.quality,
+        inputTokens: norm.inputTokens,
+        outputTokens: norm.outputTokens,
+        totalTokens: norm.totalTokens,
+        cacheReadTokens: norm.cacheReadTokens,
+        cacheWriteTokens: norm.cacheWriteTokens,
+        reasoningTokens: norm.reasoningTokens,
+        toolCallsCount,
+        operatingMode: team.operatingMode ?? 'normal',
+        isRetry: false,
+      }
+
+      const { recorded } = await recordTokenUsageEvent(stateRoot, team.id, usageEvent)
+
+      // Budget enforcement: check if team budget is exceeded
+      if (recorded && team.tokenBudget !== undefined && team.tokenBudget > 0) {
+        const ledger = await readTokenLedger(stateRoot, team.id)
+        const exactTotal = ledger.events.reduce((sum, e) => sum + e.totalTokens, 0)
+        if (exactTotal >= team.tokenBudget && !team.budgetExceeded) {
+          await withTeamLock(team.id, async () => {
+            const fresh = await readTeam(stateRoot, team.id)
+            if (fresh && !fresh.budgetExceeded) {
+              fresh.budgetExceeded = true
+              await writeTeam(stateRoot, fresh)
+              ctx.logger?.warn?.(
+                `agent-teams: token budget exceeded for team "${team.name}" (${exactTotal} >= ${team.tokenBudget})`,
+              )
+            }
+          })
+        }
+      }
+    } catch (error) {
+      ctx.logger?.debug?.(`agent-teams: failed to record session event: ${String(error)}`)
+    }
+  })
 
   // The activity panel data/artwork routes need the Web server and the
   // workspace registry, which headless profiles do not mount; under
@@ -473,6 +600,65 @@ export function apply(ctx: Context, config: Config): void {
         }
       },
     }), 'agent-teams: plan route')
+
+    ctx.effect(() => webServer.register({
+      kind: 'exact',
+      path: '/plugins/dsh-agent-teams/token-report',
+      handler: async (req, res) => {
+        const url = new URL(req.url ?? '/', 'http://x')
+        const teamId = url.searchParams.get('teamId')
+        const format = url.searchParams.get('format') ?? 'json'
+        const roots = workspaceRegistry.list().map((workspace) => ({
+          workspace: workspace.title,
+          workspacePath: workspace.path,
+          stateRoot: join(workspace.path, resolved.stateDir),
+        }))
+
+        if (!teamId) {
+          res.writeHead(400, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
+          res.end(JSON.stringify({ error: 'teamId query parameter is required' }))
+          return
+        }
+
+        let targetTeam: any = undefined
+        let targetRoot: string | undefined = undefined
+
+        for (const root of roots) {
+          const team = await readTeam(root.stateRoot, teamId)
+          if (team) {
+            targetTeam = team
+            targetRoot = root.stateRoot
+            break
+          }
+        }
+
+        if (!targetTeam || !targetRoot) {
+          res.writeHead(404, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
+          res.end(JSON.stringify({ error: `team "${teamId}" not found` }))
+          return
+        }
+
+        const ledger = await readTokenLedger(targetRoot, targetTeam.id)
+        const report = generateTeamTokenReport(targetTeam, ledger)
+
+        if (format === 'csv') {
+          const csv = exportReportToCsv(report)
+          res.writeHead(200, {
+            'content-type': 'text/csv; charset=utf-8',
+            'content-disposition': `attachment; filename="token-report-${targetTeam.id}.csv"`,
+            'cache-control': 'no-store',
+          })
+          res.end(csv)
+          return
+        }
+
+        res.writeHead(200, {
+          'content-type': 'application/json; charset=utf-8',
+          'cache-control': 'no-store',
+        })
+        res.end(JSON.stringify(report, null, 2))
+      },
+    }), 'agent-teams: token report route')
 
   // Whale mascot artwork: serve the packaged V2 role/action images to the
   // activity panel. An explicit allowlist guards the route (no path

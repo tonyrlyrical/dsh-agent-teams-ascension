@@ -77,6 +77,20 @@ export interface TeamActivitySnapshot {
         readonly blockers: readonly string[];
         readonly warnings: readonly string[];
     };
+    readonly operatingMode?: 'normal' | 'economy';
+    readonly maxConcurrentWorkers?: number;
+    readonly tokenBudget?: number;
+    readonly budgetExceeded?: boolean;
+    readonly tokenAccounting?: {
+        readonly exactTotalTokens: number;
+        readonly exactInputTokens: number;
+        readonly exactOutputTokens: number;
+        readonly exactCacheReadTokens: number;
+        readonly exactReasoningTokens: number;
+        readonly estimatedTokensTotal: number;
+        readonly totalInvocations: number;
+        readonly exactCoveragePercentage: number;
+    };
 }
 /** Snapshot projection switches for live and archived teams. */
 export interface TeamSnapshotOptions {

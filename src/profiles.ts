@@ -18,7 +18,7 @@ export const MAX_PROFILE_TASKS = 32
 /** Protocol excerpt length in the usage / prompt listing. */
 export const PROFILE_PROTOCOL_PROMPT_LIMIT = 240
 
-const PROFILE_KEYS = ['description', 'protocol', 'executionPrompt', 'fallback', 'members', 'tasks', 'taskPlanning', 'reviewPolicy'] as const
+const PROFILE_KEYS = ['description', 'protocol', 'executionPrompt', 'fallback', 'members', 'tasks', 'taskPlanning', 'reviewPolicy', 'operatingMode'] as const
 const REVIEW_POLICY_KEYS = ['requirementsMinRounds', 'requirementsMaxRounds', 'codeMaxRounds', 'maxRepairAttempts', 'requiredReviewers'] as const
 const MEMBER_KEYS = ['name', 'role', 'provider', 'model', 'reasoning_effort', 'executionPrompt', 'fallback', 'tool_policy'] as const
 const FALLBACK_KEYS = ['provider', 'model'] as const
@@ -69,6 +69,7 @@ export interface TeamProfileConfig {
   taskPlanning?: 'captain' | 'seed'
   tasks?: TeamProfileTaskConfig[]
   reviewPolicy?: import('./types.ts').ReviewPolicy
+  operatingMode?: 'normal' | 'economy'
 }
 
 /** A profile member after trim / pairing / reserved-name checks. */
@@ -104,6 +105,7 @@ export interface NormalizedTeamProfile {
   members: NormalizedProfileMember[]
   tasks: NormalizedProfileTask[]
   reviewPolicy?: import('./types.ts').ReviewPolicy
+  operatingMode?: 'normal' | 'economy'
 }
 
 /** The goal + optional named profile extracted from a slash / gesture line. */
@@ -305,6 +307,12 @@ function normalizeListedProfile(
   const fallback = normalizeFallback(raw['fallback'], `${path}.fallback`)
   const taskPlanning = normalizeTaskPlanning(raw['taskPlanning'], `${path}.taskPlanning`)
   const reviewPolicy = normalizeReviewPolicy(raw['reviewPolicy'], `${path}.reviewPolicy`)
+  const operatingModeRaw = raw['operatingMode']
+  const operatingMode = operatingModeRaw === 'economy' || operatingModeRaw === 'ahorro'
+    ? 'economy' as const
+    : operatingModeRaw === 'normal'
+      ? 'normal' as const
+      : undefined
   const membersRaw = raw['members']
   if (!Array.isArray(membersRaw) || membersRaw.length === 0) {
     throw new Error(`AgentTeams profile "${listed.name}" has no members`)
@@ -394,6 +402,7 @@ function normalizeListedProfile(
     fallback,
     taskPlanning,
     reviewPolicy,
+    operatingMode,
     members,
     tasks: taskPlanning === 'captain' ? [] : tasks,
   })

@@ -797,6 +797,7 @@ function isTeamProfileSnapshot(value: unknown): value is TeamProfileSnapshot {
     && (value['fallback'] === undefined || (isRecord(value['fallback']) && typeof value['fallback']['provider'] === 'string' && typeof value['fallback']['model'] === 'string'))
     && (value['taskPlanning'] === undefined || value['taskPlanning'] === 'captain' || value['taskPlanning'] === 'seed')
     && (value['reviewPolicy'] === undefined || isReviewPolicy(value['reviewPolicy']))
+    && (value['operatingMode'] === undefined || value['operatingMode'] === 'normal' || value['operatingMode'] === 'economy')
 }
 
 function coerceProfileSnapshot(value: unknown): TeamProfileSnapshot | undefined {
@@ -918,6 +919,19 @@ export function describeTeamStateDefect(raw: unknown, expectedId: string): strin
   if (raw['halted'] !== undefined && typeof raw['halted'] !== 'boolean') return 'halted must be a boolean'
   if (raw['reviewPolicy'] !== undefined && !isReviewPolicy(raw['reviewPolicy'])) return 'reviewPolicy is invalid'
   if (raw['escalated'] !== undefined && typeof raw['escalated'] !== 'boolean') return 'escalated must be a boolean'
+  if (raw['operatingMode'] !== undefined && raw['operatingMode'] !== 'normal' && raw['operatingMode'] !== 'economy') {
+    return 'operatingMode must be "normal" or "economy"'
+  }
+  if (raw['maxConcurrentWorkers'] !== undefined && (!Number.isSafeInteger(raw['maxConcurrentWorkers']) || (raw['maxConcurrentWorkers'] as number) <= 0)) {
+    return 'maxConcurrentWorkers must be a positive integer'
+  }
+  if (raw['tokenBudget'] !== undefined && (!Number.isFinite(raw['tokenBudget']) || (raw['tokenBudget'] as number) <= 0)) {
+    return 'tokenBudget must be a positive number'
+  }
+  if (raw['budgetWarningThreshold'] !== undefined && !Number.isFinite(raw['budgetWarningThreshold'])) {
+    return 'budgetWarningThreshold must be a number'
+  }
+  if (raw['budgetExceeded'] !== undefined && typeof raw['budgetExceeded'] !== 'boolean') return 'budgetExceeded must be a boolean'
   return 'record does not satisfy the durable team contract'
 }
 
@@ -1074,6 +1088,11 @@ function isTeamState(value: unknown, expectedId: string): value is TeamState {
     && (value['haltedAt'] === undefined || isFiniteNumber(value['haltedAt']))
     && (value['reviewPolicy'] === undefined || isReviewPolicy(value['reviewPolicy']))
     && (value['escalated'] === undefined || typeof value['escalated'] === 'boolean')
+    && (value['operatingMode'] === undefined || value['operatingMode'] === 'normal' || value['operatingMode'] === 'economy')
+    && (value['maxConcurrentWorkers'] === undefined || (Number.isSafeInteger(value['maxConcurrentWorkers']) && (value['maxConcurrentWorkers'] as number) > 0))
+    && (value['tokenBudget'] === undefined || (Number.isFinite(value['tokenBudget']) && (value['tokenBudget'] as number) > 0))
+    && (value['budgetWarningThreshold'] === undefined || Number.isFinite(value['budgetWarningThreshold']))
+    && (value['budgetExceeded'] === undefined || typeof value['budgetExceeded'] === 'boolean')
   if (!validShape) return false
 
   const members = value['members'] as TeamMember[]

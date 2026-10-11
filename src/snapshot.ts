@@ -18,6 +18,7 @@ import {
   CAPTAIN_KEY, listArchivedTeamIds, readArchivedTeam, readUnreadMailbox, readTeam,
   taskDepthsById, taskVisualState,
 } from './state.ts'
+import { readTokenLedger } from './token-accounting.ts'
 import type { MemberStatus, TeamState, TeamTask } from './types.ts'
 
 /** Visual task state for the activity panel. */
@@ -88,6 +89,20 @@ export interface TeamActivitySnapshot {
   readonly loopState?: string
   readonly deliverable?: boolean
   readonly delivery?: { readonly ok: boolean; readonly blockers: readonly string[]; readonly warnings: readonly string[] }
+  readonly operatingMode?: 'normal' | 'economy'
+  readonly maxConcurrentWorkers?: number
+  readonly tokenBudget?: number
+  readonly budgetExceeded?: boolean
+  readonly tokenAccounting?: {
+    readonly exactTotalTokens: number
+    readonly exactInputTokens: number
+    readonly exactOutputTokens: number
+    readonly exactCacheReadTokens: number
+    readonly exactReasoningTokens: number
+    readonly estimatedTokensTotal: number
+    readonly totalInvocations: number
+    readonly exactCoveragePercentage: number
+  }
 }
 
 /** Snapshot projection switches for live and archived teams. */
@@ -193,6 +208,29 @@ export async function assembleTeamSnapshot(
       staleById.set(note.taskId, [...staleById.get(note.taskId) ?? [], note.message])
     }
   }
+  const ledger = await readTokenLedger(stateRoot, state.id)
+  let exactInput = 0
+  let exactOutput = 0
+  let exactTotal = 0
+  let exactCacheRead = 0
+  let exactReasoning = 0
+  let exactCount = 0
+  let estimatedTotal = 0
+  for (const ev of ledger.events) {
+    if (ev.quality === 'exact') {
+      exactInput += ev.inputTokens
+      exactOutput += ev.outputTokens
+      exactTotal += ev.totalTokens
+      exactCacheRead += ev.cacheReadTokens
+      exactReasoning += ev.reasoningTokens
+      exactCount++
+    } else if (ev.quality === 'estimated') {
+      estimatedTotal += ev.totalTokens
+    }
+  }
+  const totalInvocations = ledger.events.length
+  const exactCoveragePercentage = totalInvocations > 0 ? Math.round((exactCount / totalInvocations) * 100) : 100
+
   return {
     workspace,
     teamId: state.id,
@@ -208,6 +246,20 @@ export async function assembleTeamSnapshot(
       loopState: loop.state,
       deliverable: loop.deliverable,
       delivery: { ok: deliveryCheck.ok, blockers: [...deliveryCheck.blockers], warnings: [...deliveryCheck.warnings] },
+    },
+    operatingMode: state.operatingMode ?? 'normal',
+    ...state.maxConcurrentWorkers !== undefined ? { maxConcurrentWorkers: state.maxConcurrentWorkers } : {},
+    ...state.tokenBudget !== undefined ? { tokenBudget: state.tokenBudget } : {},
+    ...state.budgetExceeded !== undefined ? { budgetExceeded: state.budgetExceeded } : {},
+    tokenAccounting: {
+      exactTotalTokens: exactTotal,
+      exactInputTokens: exactInput,
+      exactOutputTokens: exactOutput,
+      exactCacheReadTokens: exactCacheRead,
+      exactReasoningTokens: exactReasoning,
+      estimatedTokensTotal: estimatedTotal,
+      totalInvocations,
+      exactCoveragePercentage,
     },
     members,
     tasks: tasks.map((task) => ({

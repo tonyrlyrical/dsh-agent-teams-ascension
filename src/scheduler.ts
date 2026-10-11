@@ -41,6 +41,10 @@ import type { TeamMember, TeamState, TeamTask } from './types.ts'
 export const DEPENDENCY_OUTPUT_MAX_CHARS = 2_000
 /** Combined dependency-output budget in the assignment prompt. */
 export const DEPENDENCY_OUTPUTS_TOTAL_MAX_CHARS = 12_000
+/** Economy mode per-dependency output cap. */
+export const ECONOMY_DEPENDENCY_OUTPUT_MAX_CHARS = 500
+/** Economy mode combined dependency-output budget. */
+export const ECONOMY_DEPENDENCY_OUTPUTS_TOTAL_MAX_CHARS = 3_000
 
 export interface SchedulerConfig {
   readonly stateDir: string
@@ -61,6 +65,7 @@ export interface DependencyOutput {
   readonly subject: string
   readonly profileSeedId?: string
   readonly output?: string
+  readonly direct?: boolean
 }
 
 export interface DispatchTicket {
@@ -93,6 +98,7 @@ export interface DispatchTicket {
   readonly verify?: readonly string[]
   readonly reviewedTaskId?: string
   readonly findingSourceTaskIds?: readonly string[]
+  readonly operatingMode?: 'normal' | 'economy'
 }
 
 function taskProfileSeedId(task: TeamTask): string | undefined {
@@ -107,13 +113,17 @@ function teamProfileProtocol(team: TeamState): string | undefined {
 /**
  * Recursively collect `status=completed` ancestors of `taskId` in topological
  * order (dependencies before dependents). Cycles stop that branch only.
+ * In economy mode, transitive dependencies are truncated to a concise digest.
  */
 export function collectCompletedDependencyOutputs(
   tasks: readonly TeamTask[],
   taskId: string,
   warn?: (message: string) => void,
+  operatingMode?: 'normal' | 'economy',
 ): DependencyOutput[] {
   const byId = new Map(tasks.map(task => [task.id, task]))
+  const targetTask = byId.get(taskId)
+  const directDepIds = new Set(targetTask?.dependencies ?? [])
   const visiting = new Set<string>()
   const visited = new Set<string>()
   const ordered: TeamTask[] = []
@@ -139,34 +149,48 @@ export function collectCompletedDependencyOutputs(
     .filter(task => task.status === 'completed')
     .map((task) => {
       const profileSeedId = taskProfileSeedId(task)
+      const isDirect = directDepIds.has(task.id)
+      let output = task.output
+      // In economy mode, transitive dependencies don't repeat full raw text
+      if (operatingMode === 'economy' && !isDirect && output !== undefined && output.length > 120) {
+        output = `${output.slice(0, 100)}... [digest: ${task.id} output truncated in economy mode]`
+      }
       return {
         id: task.id,
         subject: task.subject,
+        direct: isDirect,
         ...profileSeedId === undefined ? {} : { profileSeedId },
-        ...task.output === undefined ? {} : { output: task.output },
+        ...output === undefined ? {} : { output },
       }
     })
 }
 
 /** Format completed-dependency outputs with per-item and total truncation. */
-export function formatDependencyOutputs(items: readonly DependencyOutput[]): string {
+export function formatDependencyOutputs(
+  items: readonly DependencyOutput[],
+  operatingMode?: 'normal' | 'economy',
+): string {
   if (items.length === 0) return '(none)'
+  const maxChars = operatingMode === 'economy' ? ECONOMY_DEPENDENCY_OUTPUT_MAX_CHARS : DEPENDENCY_OUTPUT_MAX_CHARS
+  const totalMaxChars = operatingMode === 'economy' ? ECONOMY_DEPENDENCY_OUTPUTS_TOTAL_MAX_CHARS : DEPENDENCY_OUTPUTS_TOTAL_MAX_CHARS
+
   const formatted = items.map((item) => {
     const seed = item.profileSeedId === undefined ? '' : ` [${item.profileSeedId}]`
     const raw = item.output === undefined || item.output === ''
       ? '(no output recorded)'
       : item.output
-    const truncated = raw.length > DEPENDENCY_OUTPUT_MAX_CHARS
-    const body = truncated ? `${raw.slice(0, DEPENDENCY_OUTPUT_MAX_CHARS)} [truncated]` : raw
-    return `- ${item.id}${seed} ${item.subject}:\n  ${body}`
+    const truncated = raw.length > maxChars
+    const body = truncated ? `${raw.slice(0, maxChars)} [truncated]` : raw
+    const relation = item.direct === false ? ' (indirect prerequisite)' : ''
+    return `- ${item.id}${seed}${relation} ${item.subject}:\n  ${body}`
   })
   let selected = formatted
-  while (selected.length > 1 && selected.join('\n').length > DEPENDENCY_OUTPUTS_TOTAL_MAX_CHARS) {
+  while (selected.length > 1 && selected.join('\n').length > totalMaxChars) {
     selected = selected.slice(1)
   }
   const last = selected[0]
-  if (selected.length === 1 && last !== undefined && last.length > DEPENDENCY_OUTPUTS_TOTAL_MAX_CHARS) {
-    selected = [`${last.slice(0, DEPENDENCY_OUTPUTS_TOTAL_MAX_CHARS)} [truncated]`]
+  if (selected.length === 1 && last !== undefined && last.length > totalMaxChars) {
+    selected = [`${last.slice(0, totalMaxChars)} [truncated]`]
   }
   return selected.join('\n')
 }
@@ -254,7 +278,7 @@ Execution guidance:
 ${executionPrompt}
 `}
 Completed dependency results:
-${formatDependencyOutputs(ticket.dependencyOutputs)}
+${formatDependencyOutputs(ticket.dependencyOutputs, ticket.operatingMode)}
 
 Task: ${ticket.taskId}${seed} — ${ticket.subject}${description}
 ${staleWorkOrder}${contract === '' ? '' : `\nContract:\n${contract}\n`}
@@ -262,8 +286,10 @@ ${structuredCompletion}
 Attempt: ${ticket.attempt}
 Attempt id: ${ticket.attemptId}
 
-Call agent_teams_claim_task for ${ticket.taskId}; it will return this same attempt_id. Include attempt_id=${ticket.attemptId} in every agent_teams_update_task call. If it is rejected as stale, stop work because the task was reassigned. claimed cannot jump to completed. Mark in_progress first, then completed or failed. Include attempt_id on every update. Then send_message to captain with source_task_id and source_attempt_id and become idle.
-When finishing: use status=completed only when the task's success criteria are satisfied; use status=failed when blocking findings or validation failures mean downstream work must not proceed; include a concise output in either case. Quality kinds must submit structured fields: review/requirements need verdict=pass to complete (needs_revision/reject must fail with findings); implementation/repair/verification/integration need acceptanceResults and commandsRun, while implementation/repair also need in-scope changedPaths. Use status values "passed" or "failed" inside those arrays. After the work and verification finish, call agent_teams_update_task immediately; do not wait for captain confirmation and do not continue exploring. Do not approve your own implementation. Mail is not a formal next review. Completed work must not be repeated to attach late evidence: call update_task on the original task with its attempt_id and acceptanceResults/commandsRun/evidence_note; supplements are append-only and cannot change its verdict. Treat the dependency results above as source material. Do not ignore them. Work only this task and only its in-scope paths in this turn.
+${ticket.operatingMode === 'economy'
+  ? `Claim task ${ticket.taskId} (attempt_id=${ticket.attemptId}). Mark in_progress first, then completed or failed. Submit required structured fields for quality kinds. Send message to captain and become idle.`
+  : `Call agent_teams_claim_task for ${ticket.taskId}; it will return this same attempt_id. Include attempt_id=${ticket.attemptId} in every agent_teams_update_task call. If it is rejected as stale, stop work because the task was reassigned. claimed cannot jump to completed. Mark in_progress first, then completed or failed. Include attempt_id on every update. Then send_message to captain with source_task_id and source_attempt_id and become idle.
+When finishing: use status=completed only when the task's success criteria are satisfied; use status=failed when blocking findings or validation failures mean downstream work must not proceed; include a concise output in either case. Quality kinds must submit structured fields: review/requirements need verdict=pass to complete (needs_revision/reject must fail with findings); implementation/repair/verification/integration need acceptanceResults and commandsRun, while implementation/repair also need in-scope changedPaths. Use status values "passed" or "failed" inside those arrays. After the work and verification finish, call agent_teams_update_task immediately; do not wait for captain confirmation and do not continue exploring. Do not approve your own implementation. Mail is not a formal next review. Completed work must not be repeated to attach late evidence: call update_task on the original task with its attempt_id and acceptanceResults/commandsRun/evidence_note; supplements are append-only and cannot change its verdict. Treat the dependency results above as source material. Do not ignore them. Work only this task and only its in-scope paths in this turn.`}
 
 State policy: ${stateDir}/${teamId}/ is read-only diagnostics; mutate team state only through agent_teams_* tools.`
 }
@@ -304,9 +330,35 @@ export function installTeamScheduler(ctx: Context, config: SchedulerConfig): Tea
       if (team === undefined || team.halted === true || team.phase === 'staged') return
       const captain = liveCaptain(ctx, team.captainSessionId, suppliedCaptain)
       if (captain === undefined) return
-      for (const member of team.members) {
-        if (member.status === 'removed') continue
-        await runtime.kickMember(workspace, teamId, member.name, captain)
+      const maxWorkers = team.maxConcurrentWorkers ?? (team.operatingMode === 'economy' ? 2 : undefined)
+      if (maxWorkers !== undefined) {
+        const workingMembers = team.members.filter(m => m.status === 'working')
+        const availableSlots = Math.max(0, maxWorkers - workingMembers.length)
+
+        const activeMembers = team.members.filter(m => m.status !== 'removed')
+        const priority: TeamMember[] = []
+        const others: TeamMember[] = []
+        for (const member of activeMembers) {
+          const owned = ownedOpenTask(team.tasks, member.name)
+          if (owned !== undefined) priority.push(member)
+          else others.push(member)
+        }
+
+        for (const member of priority) {
+          await runtime.kickMember(workspace, teamId, member.name, captain)
+        }
+
+        let launched = 0
+        for (const member of others) {
+          if (launched >= availableSlots) break
+          await runtime.kickMember(workspace, teamId, member.name, captain)
+          launched += 1
+        }
+      } else {
+        for (const member of team.members) {
+          if (member.status === 'removed') continue
+          await runtime.kickMember(workspace, teamId, member.name, captain)
+        }
       }
     },
 
@@ -364,6 +416,15 @@ export function installTeamScheduler(ctx: Context, config: SchedulerConfig): Tea
           const parkedAttemptId = parkedAttempts.get(currentMember.id)
           const recoverOwned = owned !== undefined
             && (owned.attemptId === undefined || owned.attemptId !== parkedAttemptId)
+          if (!recoverOwned) {
+            const maxWorkers = fresh.maxConcurrentWorkers ?? (fresh.operatingMode === 'economy' ? 2 : undefined)
+            if (maxWorkers !== undefined) {
+              const currentWorkingCount = fresh.members.filter(m => m.status === 'working' && m.name !== memberName).length
+              if (currentWorkingCount >= maxWorkers) {
+                return undefined
+              }
+            }
+          }
           const task = recoverOwned ? owned : owned === undefined
             ? nextReadyTask(fresh.tasks, currentMember.name)
             : undefined
@@ -429,10 +490,12 @@ export function installTeamScheduler(ctx: Context, config: SchedulerConfig): Tea
             ...task.verify === undefined ? {} : { verify: task.verify },
             ...task.reviewedTaskId === undefined ? {} : { reviewedTaskId: task.reviewedTaskId },
             ...task.findingSourceTaskIds === undefined ? {} : { findingSourceTaskIds: task.findingSourceTaskIds },
+            operatingMode: fresh.operatingMode,
             dependencyOutputs: collectCompletedDependencyOutputs(
               fresh.tasks,
               task.id,
               (message) => ctx.logger.warn(message),
+              fresh.operatingMode,
             ),
           }
         })

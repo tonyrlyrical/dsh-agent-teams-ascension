@@ -18,6 +18,10 @@ import type { TeamTask } from './types.ts';
 export declare const DEPENDENCY_OUTPUT_MAX_CHARS = 2000;
 /** Combined dependency-output budget in the assignment prompt. */
 export declare const DEPENDENCY_OUTPUTS_TOTAL_MAX_CHARS = 12000;
+/** Economy mode per-dependency output cap. */
+export declare const ECONOMY_DEPENDENCY_OUTPUT_MAX_CHARS = 500;
+/** Economy mode combined dependency-output budget. */
+export declare const ECONOMY_DEPENDENCY_OUTPUTS_TOTAL_MAX_CHARS = 3000;
 export interface SchedulerConfig {
     readonly stateDir: string;
     readonly executionPrompt?: string;
@@ -35,6 +39,7 @@ export interface DependencyOutput {
     readonly subject: string;
     readonly profileSeedId?: string;
     readonly output?: string;
+    readonly direct?: boolean;
 }
 export interface DispatchTicket {
     readonly taskId: string;
@@ -66,14 +71,16 @@ export interface DispatchTicket {
     readonly verify?: readonly string[];
     readonly reviewedTaskId?: string;
     readonly findingSourceTaskIds?: readonly string[];
+    readonly operatingMode?: 'normal' | 'economy';
 }
 /**
  * Recursively collect `status=completed` ancestors of `taskId` in topological
  * order (dependencies before dependents). Cycles stop that branch only.
+ * In economy mode, transitive dependencies are truncated to a concise digest.
  */
-export declare function collectCompletedDependencyOutputs(tasks: readonly TeamTask[], taskId: string, warn?: (message: string) => void): DependencyOutput[];
+export declare function collectCompletedDependencyOutputs(tasks: readonly TeamTask[], taskId: string, warn?: (message: string) => void, operatingMode?: 'normal' | 'economy'): DependencyOutput[];
 /** Format completed-dependency outputs with per-item and total truncation. */
-export declare function formatDependencyOutputs(items: readonly DependencyOutput[]): string;
+export declare function formatDependencyOutputs(items: readonly DependencyOutput[], operatingMode?: 'normal' | 'economy'): string;
 export declare function assignmentPrompt(ticket: DispatchTicket, stateDir: string, teamId: string, workOrderWarnings?: readonly string[]): string;
 /** Install one scheduler and its member activity observer. */
 export declare function installTeamScheduler(ctx: Context, config: SchedulerConfig): TeamScheduler;

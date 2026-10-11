@@ -77,6 +77,10 @@ export interface Config {
      * Disable to keep the natural-language trigger as the only entry point.
      */
     slashCommand?: boolean;
+    /** Default operating mode when not specified in team creation (default 'normal'). */
+    defaultOperatingMode?: 'normal' | 'economy';
+    /** Global worker concurrency cap default. */
+    maxConcurrentWorkers?: number;
 }
 export declare const Config: z<Config>;
 /** The model-facing usage policy: when and how to drive AgentTeams. */

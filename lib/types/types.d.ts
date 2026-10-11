@@ -303,6 +303,8 @@ export interface TeamProfileSnapshot {
     taskPlanning?: 'captain' | 'seed';
     /** Frozen review-loop policy from the creating profile. */
     reviewPolicy?: ReviewPolicy;
+    /** Default operating mode specified by profile. */
+    operatingMode?: 'normal' | 'economy';
 }
 /** The full durable team record. */
 export interface TeamState {
@@ -347,4 +349,28 @@ export interface TeamState {
     reviewPolicy?: ReviewPolicy;
     /** Set when an automatic review/repair loop hits its configured ceiling. */
     escalated?: boolean;
+    /**
+     * First-class operating mode: 'normal' (balanced reliability) or
+     * 'economy' (token conservation, bounded dependencies, tighter limits).
+     * Missing means 'normal' for durable backward compatibility.
+     */
+    operatingMode?: 'normal' | 'economy';
+    /**
+     * Global worker concurrency cap. When set, limits simultaneously working
+     * members across the DAG. Defaults to 4 in normal mode, 2 in economy mode.
+     */
+    maxConcurrentWorkers?: number;
+    /**
+     * Optional total token budget hard ceiling across all team members.
+     * When exceeded, further work stops or generates budget alerts.
+     */
+    tokenBudget?: number;
+    /**
+     * Fraction of tokenBudget (0.0 - 1.0) at which warning alerts are raised.
+     */
+    budgetWarningThreshold?: number;
+    /**
+     * Flag indicating whether the team exceeded its configured tokenBudget.
+     */
+    budgetExceeded?: boolean;
 }

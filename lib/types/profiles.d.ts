@@ -56,6 +56,7 @@ export interface TeamProfileConfig {
     taskPlanning?: 'captain' | 'seed';
     tasks?: TeamProfileTaskConfig[];
     reviewPolicy?: import('./types.ts').ReviewPolicy;
+    operatingMode?: 'normal' | 'economy';
 }
 /** A profile member after trim / pairing / reserved-name checks. */
 export interface NormalizedProfileMember {
@@ -88,6 +89,7 @@ export interface NormalizedTeamProfile {
     members: NormalizedProfileMember[];
     tasks: NormalizedProfileTask[];
     reviewPolicy?: import('./types.ts').ReviewPolicy;
+    operatingMode?: 'normal' | 'economy';
 }
 /** The goal + optional named profile extracted from a slash / gesture line. */
 export interface AgentTeamsInvocation {

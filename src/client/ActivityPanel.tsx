@@ -555,11 +555,66 @@ export function TeamSection({ team, modelDirectory, onContinuePlanning, onDiscar
           <span className={css.teamName} title={team.name}>{team.name}</span>
           {historic && <span className={css.historicPill}>{t(discarded ? 'team.discarded' : 'team.ended')}</span>}
           {stopped && <span className={css.historicPill}>{t('team.stopped')}</span>}
+          {team.operatingMode && (
+            <span
+              className={css.historicPill}
+              style={{
+                background: team.operatingMode === 'economy' ? 'var(--dsw-alias-state-success-subtle, rgba(34,197,94,0.15))' : 'var(--dsw-alias-state-business-subtle, rgba(59,130,246,0.15))',
+                color: team.operatingMode === 'economy' ? 'var(--dsw-alias-state-success-primary, #16a34a)' : 'var(--dsw-alias-state-business-primary, #2563eb)',
+                border: '1px solid currentColor',
+                fontWeight: 600,
+                fontSize: '11px',
+                padding: '1px 6px',
+                borderRadius: '4px',
+              }}
+              title={team.operatingMode === 'economy' ? 'Economy Mode (Ahorro)' : 'Normal Mode'}
+            >
+              {team.operatingMode === 'economy' ? 'Economy' : 'Normal'}
+            </span>
+          )}
+          {team.budgetExceeded && (
+            <span
+              className={css.historicPill}
+              style={{
+                background: 'rgba(239,68,68,0.15)',
+                color: '#dc2626',
+                border: '1px solid currentColor',
+                fontWeight: 600,
+                fontSize: '11px',
+                padding: '1px 6px',
+                borderRadius: '4px',
+              }}
+              title="Token Budget Exceeded"
+            >
+              Budget Exceeded
+            </span>
+          )}
           <span className={css.teamStats}>
             <span data-stat="members">{t('team.stats.members', { count: team.members.length })}</span>
             <span data-stat="tasks">{t('team.stats.completed', { completed: completedCount, total: team.tasks.length })}</span>
             <span data-stat="messages">{t('team.stats.messages', { count: team.messageCount })}</span>
+            {team.tokenAccounting !== undefined && (
+              <span data-stat="tokens" title={`Input: ${team.tokenAccounting.exactInputTokens.toLocaleString()}, Output: ${team.tokenAccounting.exactOutputTokens.toLocaleString()}, Coverage: ${team.tokenAccounting.exactCoveragePercentage}%`}>
+                Tokens: {team.tokenAccounting.exactTotalTokens.toLocaleString()}
+              </span>
+            )}
           </span>
+          <a
+            href={`/plugins/dsh-agent-teams/token-report?teamId=${encodeURIComponent(team.teamId)}&format=csv`}
+            download={`token-report-${team.teamId}.csv`}
+            title="Download Token Accounting CSV Report"
+            style={{
+              fontSize: '11px',
+              color: 'var(--dsw-alias-label-tertiary, #6b7280)',
+              textDecoration: 'none',
+              padding: '2px 6px',
+              border: '1px solid var(--dsw-alias-border-subtle, #e5e7eb)',
+              borderRadius: '4px',
+              marginLeft: '4px',
+            }}
+          >
+            CSV Report
+          </a>
           {canStop && (
             <button
               type="button"

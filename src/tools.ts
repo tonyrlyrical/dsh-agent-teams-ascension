@@ -89,6 +89,13 @@ import { collectCompletedDependencyOutputs, formatDependencyOutputs, installTeam
 import { installMailboxAdmission, isCurrentMail, mailboxContent, mailboxPrompt, readCurrentMailbox } from './mailbox.ts'
 import { resolveTeamProfile } from './profiles.ts'
 import { forkLineageNote, leadIdentityOf, leadIdentityOfAsync, nearestLiveLead, sessionLeadsTeam, sessionLeadsTeamAsync } from './lineage.ts'
+import {
+  readTokenLedger,
+  generateTeamTokenReport,
+  saveTeamTokenReport,
+  exportReportToCsv,
+  type TeamTokenReport,
+} from './token-accounting.ts'
 
 export { steerCaptainReport } from './members.ts'
 
@@ -114,6 +121,10 @@ export interface ToolsConfig {
   profiles: Record<string, import('./profiles.ts').TeamProfileConfig>
   /** Owner-declared reusable member tool policies, keyed by policy id (#59). */
   toolPolicies: Record<string, MemberToolPolicy>
+  /** Default operating mode when not specified in team creation (default 'normal'). */
+  defaultOperatingMode?: 'normal' | 'economy'
+  /** Global worker concurrency cap default. */
+  maxConcurrentWorkers?: number
 }
 
 /** Browser/UI mutations allowed while a plan is waiting for approval. */
@@ -948,6 +959,19 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): Agen
         enum: ['required', 'automatic'],
         description: 'required stages the plan for explicit user review; automatic starts immediately. Defaults to automatic for API compatibility.',
       },
+      operating_mode: {
+        type: 'string',
+        enum: ['normal', 'economy', 'ahorro'],
+        description: 'Primary operating mode: "normal" (default) or "economy" / "ahorro" (token reduction, compact contexts, concurrency limits).',
+      },
+      max_concurrent_workers: {
+        type: 'number',
+        description: 'Maximum concurrent workers permitted across DAG (defaults to 4 for normal, 2 for economy).',
+      },
+      token_budget: {
+        type: 'number',
+        description: 'Hard total token ceiling for this team. Work stops if exceeded.',
+      },
     },
     output: {
       schema: {
@@ -959,6 +983,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): Agen
           captain_session_id: { type: 'string', required: true },
           state_dir: { type: 'string', required: true },
           phase: { type: 'string', required: true },
+          operating_mode: { type: 'string' },
           profile: { type: 'string' },
           task_planning: { type: 'string' },
           members: { type: 'array', items: { type: 'object', additionalProperties: false, properties: { member_name: { type: 'string', required: true }, member_id: { type: 'string', required: true }, member_role: { type: 'string' }, provider: { type: 'string', required: true }, model: { type: 'string', required: true }, reasoning_effort: { type: 'string' }, tool_policy: { type: 'string' }, status: { type: 'string', required: true } } } },
@@ -1005,6 +1030,16 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): Agen
         ? args.profile.trim()
         : undefined
       if (profileName !== undefined && args.plan !== undefined) throw new Error('choose either a configured profile or an inline plan')
+      const operatingModeRaw = (args as { operating_mode?: string }).operating_mode
+      const operatingMode: 'normal' | 'economy' = operatingModeRaw === 'economy' || operatingModeRaw === 'ahorro'
+        ? 'economy'
+        : (operatingModeRaw === 'normal' ? 'normal' : (config.defaultOperatingMode ?? 'normal'))
+      const maxConcurrentWorkers = typeof (args as { max_concurrent_workers?: number }).max_concurrent_workers === 'number'
+        ? (args as { max_concurrent_workers?: number }).max_concurrent_workers
+        : config.maxConcurrentWorkers
+      const tokenBudget = typeof (args as { token_budget?: number }).token_budget === 'number'
+        ? (args as { token_budget?: number }).token_budget
+        : undefined
       const created = await withTeamLock(captainLockKey(stateRoot, captain.id), async () => {
         const current = await findTeamByParticipant(stateRoot, captain.id, await leadIdentityOfAsync(ctx, captain.session))
         if (current !== undefined) {
@@ -1030,6 +1065,9 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): Agen
               members: [],
               tasks: [],
               taskSeq: 0,
+              operatingMode,
+              ...maxConcurrentWorkers !== undefined ? { maxConcurrentWorkers } : {},
+              ...tokenBudget !== undefined ? { tokenBudget } : {},
               ...staged ? { phase: 'staged' as const, planReviewState: 'awaiting_review' as const } : {},
             }
             await createTeamDir(stateRoot, state)
@@ -1048,6 +1086,9 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): Agen
             inlinePlan: args.plan,
             description: args.description,
             staged,
+            operatingMode,
+            maxConcurrentWorkers,
+            tokenBudget,
           })
         })
       })
@@ -1095,6 +1136,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): Agen
           captain_session_id: snapshot.captainSessionId,
           state_dir: join(stateRoot, snapshot.id),
           phase: snapshot.phase ?? 'running',
+          operating_mode: snapshot.operatingMode ?? 'normal',
         }
       }
       return {
@@ -1103,6 +1145,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): Agen
         captain_session_id: snapshot.captainSessionId,
         state_dir: join(stateRoot, snapshot.id),
         phase: snapshot.phase ?? 'running',
+        operating_mode: snapshot.operatingMode ?? 'normal',
         ...snapshot.profile === undefined ? {} : { profile: snapshot.profile.name },
         task_planning: snapshot.profile?.taskPlanning ?? 'seed',
         members: snapshot.members.map((member) => ({
@@ -2282,12 +2325,18 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): Agen
   ctx.tools.register(defineTool({
     name: 'agent_teams_status',
     description: 'Team snapshot: members with live activity and tasks with status/assignee/dependencies/output. Captains also see every team mailbox; members see only their own inbox. Use after mailbox progress deliveries or for an explicit status request. After dispatch, end your turn while members work; do not repeatedly poll.',
-    parameters: {},
+    parameters: {
+      token_report: {
+        type: 'string',
+        enum: ['summary', 'detailed', 'csv'],
+        description: 'Optional on-demand token accounting report format ("summary", "detailed", or "csv").',
+      },
+    },
     output: {
       schema: { type: 'object', additionalProperties: true, properties: {} },
       render: (_args, value) => [{ type: 'text', text: renderStatus(value) }],
     },
-    async execute(_args, exec) {
+    async execute(args: { token_report?: 'summary' | 'detailed' | 'csv' }, exec) {
       const caller = requireCaptain(exec)
       const workspace = workspaceOf(caller)
       const stateRoot = stateRootOf(workspace, config)
@@ -2371,18 +2420,58 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): Agen
         status: row.status,
         ...row.evidence === undefined ? {} : { evidence: row.evidence },
       }))
+      const loop = describeQualityLoop(team, audit)
       const deliveryCheck = canDeclareDelivery(team, audit)
       const delivery = {
         ok: deliveryCheck.ok,
         blockers: [...deliveryCheck.blockers],
         warnings: [...deliveryCheck.warnings],
       }
-      const loop = describeQualityLoop(team, audit)
+      let tokenAccounting: {
+        total_tokens: number
+        exact_tokens: number
+        estimated_tokens: number
+        unknown_tokens: number
+        coverage: number
+        input_tokens: number
+        output_tokens: number
+        cached_tokens: number
+        reasoning_tokens: number
+        budget_exceeded: boolean
+        report?: TeamTokenReport
+        csv?: string
+      } | undefined
+      try {
+        const ledger = await readTokenLedger(stateRoot, team.id)
+        if (ledger.events.length > 0) {
+          const report = generateTeamTokenReport(team, ledger)
+          const allTerminal = team.tasks.length > 0 && team.tasks.every(t => TERMINAL_TASK_STATUSES.includes(t.status))
+          if (allTerminal || args?.token_report) {
+            await saveTeamTokenReport(stateRoot, team.id, report).catch(() => undefined)
+          }
+          const csv = args?.token_report === 'csv' ? exportReportToCsv(report) : undefined
+          tokenAccounting = {
+            total_tokens: report.exactTotalTokens + report.estimatedTokensTotal,
+            exact_tokens: report.exactTotalTokens,
+            estimated_tokens: report.estimatedTokensTotal,
+            unknown_tokens: report.unknownInvocations,
+            coverage: report.exactCoveragePercentage,
+            input_tokens: report.exactInputTokens,
+            output_tokens: report.exactOutputTokens,
+            cached_tokens: report.exactCacheReadTokens,
+            reasoning_tokens: report.exactReasoningTokens,
+            budget_exceeded: team.budgetExceeded ?? false,
+            ...args?.token_report !== undefined ? { report } : {},
+            ...csv !== undefined ? { csv } : {},
+          }
+        }
+      } catch {}
       const result = {
         team_id: team.id,
         team_name: team.name,
         description: team.description ?? '',
         phase: team.phase ?? 'running',
+        operating_mode: team.operatingMode ?? 'normal',
         halted: loop.halted,
         escalated: loop.escalated,
         loop_state: loop.state,
@@ -2390,6 +2479,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): Agen
         deliverable: loop.deliverable,
         coverage,
         delivery,
+        ...tokenAccounting !== undefined ? { token_accounting: tokenAccounting } : {},
         ...team.profile === undefined ? {} : {
           profile: {
             name: team.profile.name,
@@ -2420,7 +2510,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): Agen
           acknowledgeMailbox(stateRoot, team.id, identity.kind === 'captain' ? CAPTAIN_KEY : identity.name, acknowledged)
         ))
       }
-      return result
+      return result as any
     },
   }))
 
@@ -2522,6 +2612,11 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): Agen
         appendTeamEvent(ctx, captainSessionOf(ctx, fresh.captainSessionId, captain.session), 'agent-teams/team-deleted', {
           teamId: fresh.id,
         })
+        try {
+          const ledger = await readTokenLedger(stateRoot, fresh.id)
+          const report = generateTeamTokenReport(fresh, ledger)
+          await saveTeamTokenReport(stateRoot, fresh.id, report)
+        } catch {}
         // Archive, not delete: tasks (with their dependency graph) and the
         // mailboxes stay on disk for later review and dependency rebuilds.
         await archiveTeamDir(stateRoot, fresh.id)
@@ -2545,6 +2640,9 @@ async function initializeProfileTeam(input: {
   inlinePlan?: import('./profiles.ts').TeamProfileConfig
   description?: string
   staged: boolean
+  operatingMode?: 'normal' | 'economy'
+  maxConcurrentWorkers?: number
+  tokenBudget?: number
 }): Promise<{ committed: true; state: TeamState }> {
   const profile = resolveTeamProfile(input.inlinePlan === undefined ? input.config.profiles : { [input.profileName]: input.inlinePlan }, input.profileName, input.config.maxMembers)
   const selections: Awaited<ReturnType<typeof resolveMemberLlmSelection>>[] = []
@@ -2561,10 +2659,14 @@ async function initializeProfileTeam(input: {
   await validateMemberLlmSelections(input.ctx, selections, input.exec.signal)
   const now = Date.now()
   const seedToActual = new Map(profile.tasks.map((template, index) => [template.id, `t${index + 1}`] as const))
+  const operatingMode = input.operatingMode ?? profile.operatingMode ?? input.config.defaultOperatingMode ?? 'normal'
   const draft: TeamState = {
     name: input.teamName,
     id: input.teamId,
     description: input.description,
+    operatingMode,
+    ...input.maxConcurrentWorkers !== undefined ? { maxConcurrentWorkers: input.maxConcurrentWorkers } : {},
+    ...input.tokenBudget !== undefined ? { tokenBudget: input.tokenBudget } : {},
     profile: {
       name: profile.name,
       ...profile.description === undefined ? {} : { description: profile.description },
@@ -2573,6 +2675,7 @@ async function initializeProfileTeam(input: {
       ...profile.fallback === undefined ? {} : { fallback: profile.fallback },
       taskPlanning: profile.taskPlanning,
       ...profile.reviewPolicy === undefined ? {} : { reviewPolicy: profile.reviewPolicy },
+      ...profile.operatingMode === undefined ? {} : { operatingMode: profile.operatingMode },
     },
     ...profile.reviewPolicy === undefined ? {} : { reviewPolicy: profile.reviewPolicy },
     captainSessionId: input.captain.id,
@@ -2813,9 +2916,25 @@ function renderStatus(value: JsonValue): string {
     deliverable?: boolean
     coverage?: { goal_item: string; status: string; task_ids: string[] }[]
     delivery?: { ok: boolean; blockers: string[]; warnings?: string[] }
-    warnings?: string[]
+    operating_mode?: string
+    token_accounting?: {
+      total_tokens: number
+      exact_tokens: number
+      estimated_tokens: number
+      unknown_tokens: number
+      coverage: number
+      input_tokens: number
+      output_tokens: number
+      cached_tokens: number
+      reasoning_tokens: number
+      budget_exceeded: boolean
+      report?: any
+      csv?: string
+    }
   }
   const flags = [
+    team.operating_mode ? `mode: ${team.operating_mode}` : undefined,
+    team.token_accounting?.budget_exceeded ? 'budget exceeded' : undefined,
     team.halted ? 'halted' : undefined,
     team.escalated ? 'escalated' : undefined,
     team.deliverable ? 'deliverable' : undefined,
@@ -2826,6 +2945,9 @@ function renderStatus(value: JsonValue): string {
   const lines: string[] = [
     `Team "${team.team_name}"${team.description ? ` — ${team.description}` : ''}${flags.length > 0 ? ` [${flags.join(', ')}]` : ''}`,
     ...team.profile === undefined ? [] : [`Profile: ${team.profile.name}${team.profile.task_planning ? ` [${team.profile.task_planning}]` : ''}${team.profile.protocol ? ` — ${team.profile.protocol}` : ''}`],
+    ...team.token_accounting === undefined ? [] : [
+      `Tokens: ${team.token_accounting.total_tokens.toLocaleString()} total (exact: ${team.token_accounting.exact_tokens.toLocaleString()}, in: ${team.token_accounting.input_tokens.toLocaleString()}, out: ${team.token_accounting.output_tokens.toLocaleString()}, cache: ${team.token_accounting.cached_tokens.toLocaleString()}, reasoning: ${team.token_accounting.reasoning_tokens.toLocaleString()}; coverage: ${team.token_accounting.coverage}%)${team.token_accounting.budget_exceeded ? ' [BUDGET EXCEEDED]' : ''}`,
+    ],
     ...team.loop_summary ? [`Loop: ${team.loop_state ?? ''} — ${team.loop_summary}`.replace(/^Loop:  — /u, 'Loop: ')] : [],
     `Viewing as: ${team.viewer}`,
     `Members (${team.members.length}):`,
@@ -2873,5 +2995,32 @@ function renderStatus(value: JsonValue): string {
       ...team.mailbox_warnings.map((warning) => `  - ${warning}`),
     )
   }
+  if (team.token_accounting?.csv) {
+    lines.push('', team.token_accounting.csv)
+  } else if (team.token_accounting?.report) {
+    lines.push('', renderTokenReport(team.token_accounting.report))
+  }
+  return lines.join('\n')
+}
+
+/** Render a token accounting report for text model response. */
+function renderTokenReport(report: TeamTokenReport & { csv?: string }): string {
+  if (report.csv) return report.csv
+  const durationSec = Math.max(0, (report.finishedAt - report.startedAt) / 1000)
+  const lines: string[] = [
+    `Team "${report.teamName}" token accounting report (${report.operatingMode} mode):`,
+    `Duration: ${durationSec.toFixed(1)}s · Invocations: ${report.totalInvocations} (${report.exactInvocations} exact, ${report.estimatedInvocations} estimated, ${report.unknownInvocations} unknown; coverage ${report.exactCoveragePercentage}%)`,
+    `Totals: ${report.exactTotalTokens.toLocaleString()} exact tokens (${report.exactInputTokens.toLocaleString()} in, ${report.exactOutputTokens.toLocaleString()} out, ${report.exactCacheReadTokens.toLocaleString()} cache read, ${report.exactReasoningTokens.toLocaleString()} reasoning)${report.estimatedTokensTotal > 0 ? ` + ${report.estimatedTokensTotal.toLocaleString()} estimated` : ''}`,
+    '',
+    `Agent Breakdown (${report.agents.length}):`,
+    ...report.agents.map((a) => (
+      `  - ${a.agentName} [${a.role} · ${a.provider}/${a.model}]: ${a.exactTotalTokens.toLocaleString()} tokens (${a.exactInputTokens.toLocaleString()} in, ${a.exactOutputTokens.toLocaleString()} out, ${a.cacheReadTokens.toLocaleString()} cached, ${a.reasoningTokens.toLocaleString()} reasoning) across ${a.invocationCount} calls (${a.tasksHandled} tasks, status: ${a.outcome})`
+    )),
+    '',
+    `Task Breakdown (${report.tasks.length}):`,
+    ...report.tasks.map((t) => (
+      `  - ${t.taskId} [${t.status}] ${t.subject} (owner: ${t.owner}): ${t.exactTotalTokens.toLocaleString()} tokens across ${t.invocationCount} calls (${t.attemptsCount} attempts)`
+    )),
+  ]
   return lines.join('\n')
 }

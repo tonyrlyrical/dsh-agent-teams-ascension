@@ -1,0 +1,165 @@
+{
+  "timestamp": "2026-10-11T21:44:45.989Z",
+  "benchmarkVersion": "1.0.0",
+  "scenarios": [
+    {
+      "scenario": "Scenario 1: Small Self-Contained Task",
+      "mode": "baseline",
+      "invocations": 1,
+      "inputTokens": 611,
+      "outputTokens": 180,
+      "totalTokens": 791,
+      "peakWorkers": 1
+    },
+    {
+      "scenario": "Scenario 1: Small Self-Contained Task",
+      "mode": "normal",
+      "invocations": 1,
+      "inputTokens": 587,
+      "outputTokens": 180,
+      "totalTokens": 767,
+      "peakWorkers": 1
+    },
+    {
+      "scenario": "Scenario 1: Small Self-Contained Task",
+      "mode": "economy",
+      "invocations": 1,
+      "inputTokens": 193,
+      "outputTokens": 120,
+      "totalTokens": 313,
+      "peakWorkers": 1
+    },
+    {
+      "scenario": "Scenario 2: Parallel Independent Subtasks (4 workers)",
+      "mode": "baseline",
+      "invocations": 4,
+      "inputTokens": 2348,
+      "outputTokens": 880,
+      "totalTokens": 3228,
+      "peakWorkers": 4
+    },
+    {
+      "scenario": "Scenario 2: Parallel Independent Subtasks (4 workers)",
+      "mode": "normal",
+      "invocations": 4,
+      "inputTokens": 2348,
+      "outputTokens": 880,
+      "totalTokens": 3228,
+      "peakWorkers": 4
+    },
+    {
+      "scenario": "Scenario 2: Parallel Independent Subtasks (4 workers)",
+      "mode": "economy",
+      "invocations": 4,
+      "inputTokens": 776,
+      "outputTokens": 600,
+      "totalTokens": 1376,
+      "peakWorkers": 2
+    },
+    {
+      "scenario": "Scenario 3: Sequential Deep DAG Pipeline (5 stages)",
+      "mode": "baseline",
+      "invocations": 5,
+      "inputTokens": 11813,
+      "outputTokens": 1750,
+      "totalTokens": 13563,
+      "peakWorkers": 1
+    },
+    {
+      "scenario": "Scenario 3: Sequential Deep DAG Pipeline (5 stages)",
+      "mode": "normal",
+      "invocations": 5,
+      "inputTokens": 2604,
+      "outputTokens": 1750,
+      "totalTokens": 4354,
+      "peakWorkers": 1
+    },
+    {
+      "scenario": "Scenario 3: Sequential Deep DAG Pipeline (5 stages)",
+      "mode": "economy",
+      "invocations": 5,
+      "inputTokens": 839,
+      "outputTokens": 1000,
+      "totalTokens": 1839,
+      "peakWorkers": 1
+    },
+    {
+      "scenario": "Scenario 4: Large Intermediate Result Passing",
+      "mode": "baseline",
+      "invocations": 1,
+      "inputTokens": 1541,
+      "outputTokens": 300,
+      "totalTokens": 1841,
+      "peakWorkers": 1
+    },
+    {
+      "scenario": "Scenario 4: Large Intermediate Result Passing",
+      "mode": "normal",
+      "invocations": 1,
+      "inputTokens": 1541,
+      "outputTokens": 300,
+      "totalTokens": 1841,
+      "peakWorkers": 1
+    },
+    {
+      "scenario": "Scenario 4: Large Intermediate Result Passing",
+      "mode": "economy",
+      "invocations": 1,
+      "inputTokens": 438,
+      "outputTokens": 180,
+      "totalTokens": 618,
+      "peakWorkers": 1
+    },
+    {
+      "scenario": "Scenario 5: Worker Failure & Fault Recovery (2 turns)",
+      "mode": "baseline",
+      "invocations": 2,
+      "inputTokens": 1033,
+      "outputTokens": 270,
+      "totalTokens": 1303,
+      "peakWorkers": 1
+    },
+    {
+      "scenario": "Scenario 5: Worker Failure & Fault Recovery (2 turns)",
+      "mode": "normal",
+      "invocations": 2,
+      "inputTokens": 1033,
+      "outputTokens": 270,
+      "totalTokens": 1303,
+      "peakWorkers": 1
+    },
+    {
+      "scenario": "Scenario 5: Worker Failure & Fault Recovery (2 turns)",
+      "mode": "economy",
+      "invocations": 2,
+      "inputTokens": 327,
+      "outputTokens": 190,
+      "totalTokens": 517,
+      "peakWorkers": 1
+    }
+  ],
+  "aggregate": {
+    "baseline": {
+      "totalInputTokens": 17346,
+      "totalOutputTokens": 3380,
+      "totalTokens": 20726,
+      "totalInvocations": 13
+    },
+    "normal": {
+      "totalInputTokens": 8113,
+      "totalOutputTokens": 3380,
+      "totalTokens": 11493,
+      "totalInvocations": 13,
+      "savingsTokensVsBaseline": 9233,
+      "savingsPercentageVsBaseline": 44.5
+    },
+    "economy": {
+      "totalInputTokens": 2573,
+      "totalOutputTokens": 2090,
+      "totalTokens": 4663,
+      "totalInvocations": 13,
+      "savingsTokensVsBaseline": 16063,
+      "savingsPercentageVsBaseline": 77.5
+    }
+  }
+}
