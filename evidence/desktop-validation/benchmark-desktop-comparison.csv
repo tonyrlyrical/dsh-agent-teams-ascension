@@ -1,0 +1,7 @@
+Scenario ID,Scenario Name,Invocations,Baseline Tokens,Normal Tokens,Economy Tokens,Normal Savings (%),Economy Savings (%),Token Classification
+"scenario-1","Scenario 1: Small Self-Contained Task",1,791,767,334,3%,57.8%,"SYNTHETIC_ESTIMATED_HYBRID"
+"scenario-2","Scenario 2: Parallel Independent Subtasks (4 workers)",4,3228,3228,1464,0%,54.6%,"SYNTHETIC_ESTIMATED_HYBRID"
+"scenario-3","Scenario 3: Sequential Deep DAG Pipeline (5 stages)",5,13563,4354,1948,67.9%,85.6%,"SYNTHETIC_ESTIMATED_HYBRID"
+"scenario-4","Scenario 4: Large Intermediate Result Passing",1,1841,1841,640,0%,65.2%,"SYNTHETIC_ESTIMATED_HYBRID"
+"scenario-5","Scenario 5: Worker Failure & Fault Recovery (2 turns)",2,1303,1303,561,0%,56.9%,"SYNTHETIC_ESTIMATED_HYBRID"
+"aggregate","Aggregate All Scenarios",13,20726,11493,4947,44.5%,76.1%,"SYNTHETIC_ESTIMATED_HYBRID"

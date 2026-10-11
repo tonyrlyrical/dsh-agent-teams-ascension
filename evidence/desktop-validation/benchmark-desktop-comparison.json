@@ -1,0 +1,165 @@
+{
+  "metadata": {
+    "generatedAt": "2026-10-11T22:45:35.930Z",
+    "sourceBranch": "audit/ascension-adversarial-verification",
+    "baseCommit": "1094b84add6f2fb19edf659367fe2fd5f7f14154",
+    "ascensionCommit": "01c24c2d3eb0358ef9c79e663731ceb83e60fc8a",
+    "hostApplication": "DeepSeek Harness Desktop v0.2.0-rc.2 (Windows win32-x64)",
+    "runtimeEngine": "Node.js v24.21.0",
+    "classificationLegend": {
+      "inputTokens": "ESTIMATED (character-ratio prompt length heuristic ~4 chars/token)",
+      "outputTokens": "SYNTHETIC (preset typical model completions)",
+      "totalTokens": "SYNTHETIC_ESTIMATED_HYBRID",
+      "concurrency": "ACTUAL (runtime scheduler worker bounds)",
+      "ledgerIntegrity": "VERIFICADO AUTOMÁTICAMENTE (100% unit tests & real-harness canary pass)",
+      "desktopGuiInteraction": "VERIFICADO EN GUI (Harness Desktop live window, plugins view, details view)",
+      "liveModelExecution": "BLOQUEADO (Active desktop session preservation & CLI missing cloud credentials)"
+    }
+  },
+  "aggregate": {
+    "baselineTotalTokens": 20726,
+    "normalTotalTokens": 11493,
+    "economyTotalTokens": 4947,
+    "normalSavingsTokens": 9233,
+    "normalSavingsPercent": 44.5,
+    "economySavingsTokens": 15779,
+    "economySavingsPercent": 76.1
+  },
+  "scenarios": [
+    {
+      "id": "scenario-1",
+      "name": "Scenario 1: Small Self-Contained Task",
+      "invocations": 1,
+      "peakWorkersBaseline": 1,
+      "peakWorkersNormal": 1,
+      "peakWorkersEconomy": 1,
+      "baseline": {
+        "inputTokens": 611,
+        "outputTokens": 180,
+        "totalTokens": 791
+      },
+      "normal": {
+        "inputTokens": 587,
+        "outputTokens": 180,
+        "totalTokens": 767,
+        "savingsTokens": 24,
+        "savingsPercent": 3
+      },
+      "economy": {
+        "inputTokens": 214,
+        "outputTokens": 120,
+        "totalTokens": 334,
+        "savingsTokens": 457,
+        "savingsPercent": 57.8
+      }
+    },
+    {
+      "id": "scenario-2",
+      "name": "Scenario 2: Parallel Independent Subtasks (4 workers)",
+      "invocations": 4,
+      "peakWorkersBaseline": 4,
+      "peakWorkersNormal": 4,
+      "peakWorkersEconomy": 2,
+      "baseline": {
+        "inputTokens": 2348,
+        "outputTokens": 880,
+        "totalTokens": 3228
+      },
+      "normal": {
+        "inputTokens": 2348,
+        "outputTokens": 880,
+        "totalTokens": 3228,
+        "savingsTokens": 0,
+        "savingsPercent": 0
+      },
+      "economy": {
+        "inputTokens": 864,
+        "outputTokens": 600,
+        "totalTokens": 1464,
+        "savingsTokens": 1764,
+        "savingsPercent": 54.6
+      }
+    },
+    {
+      "id": "scenario-3",
+      "name": "Scenario 3: Sequential Deep DAG Pipeline (5 stages)",
+      "invocations": 5,
+      "peakWorkersBaseline": 1,
+      "peakWorkersNormal": 1,
+      "peakWorkersEconomy": 1,
+      "baseline": {
+        "inputTokens": 11813,
+        "outputTokens": 1750,
+        "totalTokens": 13563
+      },
+      "normal": {
+        "inputTokens": 2604,
+        "outputTokens": 1750,
+        "totalTokens": 4354,
+        "savingsTokens": 9209,
+        "savingsPercent": 67.9
+      },
+      "economy": {
+        "inputTokens": 948,
+        "outputTokens": 1000,
+        "totalTokens": 1948,
+        "savingsTokens": 11615,
+        "savingsPercent": 85.6
+      }
+    },
+    {
+      "id": "scenario-4",
+      "name": "Scenario 4: Large Intermediate Result Passing",
+      "invocations": 1,
+      "peakWorkersBaseline": 1,
+      "peakWorkersNormal": 1,
+      "peakWorkersEconomy": 1,
+      "baseline": {
+        "inputTokens": 1541,
+        "outputTokens": 300,
+        "totalTokens": 1841
+      },
+      "normal": {
+        "inputTokens": 1541,
+        "outputTokens": 300,
+        "totalTokens": 1841,
+        "savingsTokens": 0,
+        "savingsPercent": 0
+      },
+      "economy": {
+        "inputTokens": 460,
+        "outputTokens": 180,
+        "totalTokens": 640,
+        "savingsTokens": 1201,
+        "savingsPercent": 65.2
+      }
+    },
+    {
+      "id": "scenario-5",
+      "name": "Scenario 5: Worker Failure & Fault Recovery (2 turns)",
+      "invocations": 2,
+      "peakWorkersBaseline": 1,
+      "peakWorkersNormal": 1,
+      "peakWorkersEconomy": 1,
+      "baseline": {
+        "inputTokens": 1033,
+        "outputTokens": 270,
+        "totalTokens": 1303
+      },
+      "normal": {
+        "inputTokens": 1033,
+        "outputTokens": 270,
+        "totalTokens": 1303,
+        "savingsTokens": 0,
+        "savingsPercent": 0
+      },
+      "economy": {
+        "inputTokens": 371,
+        "outputTokens": 190,
+        "totalTokens": 561,
+        "savingsTokens": 742,
+        "savingsPercent": 56.9
+      }
+    }
+  ]
+}
