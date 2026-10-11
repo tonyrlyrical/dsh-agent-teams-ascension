@@ -45,6 +45,7 @@ export interface TokenUsageEvent {
   readonly toolCallsCount: number
   readonly operatingMode: 'normal' | 'economy'
   readonly isRetry: boolean
+  readonly seq?: number
   readonly errorDetails?: string
 }
 
@@ -143,8 +144,15 @@ const fsPrimitives = {
 }
 
 /** Compute stable event key for deduplication. */
-export function tokenEventKey(sessionId: string, turn: number, step: number): string {
-  return `${sessionId}:${turn}:${step}`
+export function tokenEventKey(
+  sessionId: string,
+  turn: number,
+  step: number,
+  seqOrAttempt?: number | string,
+): string {
+  return seqOrAttempt !== undefined
+    ? `${sessionId}:${turn}:${step}:${seqOrAttempt}`
+    : `${sessionId}:${turn}:${step}`
 }
 
 /** Load the team's token ledger from disk, returning an empty ledger if absent. */
@@ -186,8 +194,10 @@ export async function recordTokenUsageEvent(
   event: TokenUsageEvent,
 ): Promise<{ recorded: boolean; duplicate: boolean }> {
   const ledger = await readTokenLedger(stateRoot, teamId)
-  const key = tokenEventKey(event.sessionId, event.turn, event.step)
-  if (ledger.deduplicatedKeys.includes(key)) {
+  const dedupQualifier = event.seq ?? event.attemptId ?? (event.isRetry ? event.timestamp : undefined)
+  const key = tokenEventKey(event.sessionId, event.turn, event.step, dedupQualifier)
+  const legacyKey = tokenEventKey(event.sessionId, event.turn, event.step)
+  if (ledger.deduplicatedKeys.includes(key) || (dedupQualifier === undefined && ledger.deduplicatedKeys.includes(legacyKey))) {
     return { recorded: false, duplicate: true }
   }
   ledger.events.push(event)
@@ -499,6 +509,9 @@ export function generateTeamTokenReport(
   }
   if (estimatedInvocations > 0) {
     limitations.push(`${estimatedInvocations} invocation(s) used estimated counts instead of provider response metadata.`)
+  }
+  if (team.budgetExceeded === true && unknownInvocations > 0) {
+    limitations.push('Budget tracking is based on partial telemetry because some invocations lacked token counters.')
   }
 
   let finalStatus: TeamTokenReport['finalStatus'] = 'in_progress'

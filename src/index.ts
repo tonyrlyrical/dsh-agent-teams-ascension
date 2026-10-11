@@ -257,14 +257,31 @@ export function apply(ctx: Context, config: Config): void {
     installAgentTeamsGestureBoundary(ctx, () => config.profiles ?? {})
   }
 
-  // Live token accounting telemetry: intercept session assistant messages
+  // Live token accounting telemetry: intercept session assistant messages and attempts
   // and record authoritative provider token usage directly into the team ledger.
   ctx.on('session/event', async (session, event) => {
     try {
-      if (!event || (event as any).type !== 'assistant/message') return
+      if (!event) return
+      const eventType = (event as any).type
+      const isAssistantMessage = eventType === 'assistant/message'
+      const isAssistantAttempt = eventType === 'assistant/attempt'
+      if (!isAssistantMessage && !isAssistantAttempt) return
+
       const rawData = (event as any).data ?? {}
-      const rawUsage = rawData.usage
-      if (!rawUsage) return
+      let rawUsage = rawData.usage
+      if (!rawUsage && Array.isArray(rawData.stream)) {
+        for (let i = rawData.stream.length - 1; i >= 0; i--) {
+          const record = rawData.stream[i]
+          if (record?.type === 'usage' && record?.usage) {
+            rawUsage = record.usage
+            break
+          }
+          if (record?.chunk?.type === 'usage' && record?.chunk?.usage) {
+            rawUsage = record.chunk.usage
+            break
+          }
+        }
+      }
 
       const norm = normalizeTokenUsage(rawUsage)
       const workspace = (session as any).header?.cwd ?? process.cwd()
@@ -314,8 +331,19 @@ export function apply(ctx: Context, config: Config): void {
         ? rawData.message.content.filter((c: any) => c?.type === 'tool_call' || c?.type === 'tool-call').length
         : 0
 
+      const eventSeq = typeof (event as any).seq === 'number' ? (event as any).seq : undefined
+      const eventTime = typeof (event as any).time === 'number' ? (event as any).time : Date.now()
+      const isRetry = Boolean(
+        isAssistantAttempt
+        || rawData.isRetry
+        || (typeof rawData.attempt === 'number' && rawData.attempt > 1),
+      )
+      const outcome: TokenUsageEvent['outcome'] = isAssistantAttempt
+        ? (rawData.interrupted ? 'interrupted' : 'failed')
+        : (rawData.interrupted ? 'interrupted' : 'completed')
+
       const usageEvent: TokenUsageEvent = {
-        id: `${session.id}:${rawData.turn ?? 0}:${rawData.step ?? 0}`,
+        id: `${session.id}:${rawData.turn ?? 0}:${rawData.step ?? 0}:${eventSeq ?? eventTime}`,
         teamId: team.id,
         taskId: activeTaskId,
         attemptId: activeAttemptId,
@@ -327,9 +355,10 @@ export function apply(ctx: Context, config: Config): void {
         model: model || 'unknown',
         turn: typeof rawData.turn === 'number' ? rawData.turn : 0,
         step: typeof rawData.step === 'number' ? rawData.step : 0,
-        timestamp: typeof (event as any).time === 'number' ? (event as any).time : Date.now(),
+        seq: eventSeq,
+        timestamp: eventTime,
         durationMs: 0,
-        outcome: 'completed',
+        outcome,
         quality: norm.quality,
         inputTokens: norm.inputTokens,
         outputTokens: norm.outputTokens,
@@ -339,7 +368,7 @@ export function apply(ctx: Context, config: Config): void {
         reasoningTokens: norm.reasoningTokens,
         toolCallsCount,
         operatingMode: team.operatingMode ?? 'normal',
-        isRetry: false,
+        isRetry,
       }
 
       const { recorded } = await recordTokenUsageEvent(stateRoot, team.id, usageEvent)

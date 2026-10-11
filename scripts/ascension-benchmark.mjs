@@ -28,7 +28,19 @@ import {
 } from '../lib/scheduler.js'
 import { memberWelcome } from '../lib/members.js'
 
-// Deterministic estimation: ~4 chars per token for English prompts/code
+// Offline Deterministic Token Heuristic: ~4 chars per token for English prompts/code
+// Metric Classification:
+// - inputTokens: ESTIMATED (character-ratio prompt length heuristic)
+// - outputTokens: SYNTHETIC (preset typical response lengths)
+// - totalTokens: SYNTHETIC/ESTIMATED HYBRID
+// - concurrency: ACTUAL (runtime scheduler concurrency bounds)
+export const METRIC_CLASSIFICATION = {
+  inputTokens: 'ESTIMATED',
+  outputTokens: 'SYNTHETIC',
+  totalTokens: 'SYNTHETIC_ESTIMATED_HYBRID',
+  concurrency: 'ACTUAL',
+}
+
 function estimateTokens(text) {
   if (!text) return 0
   return Math.ceil(text.length / 4)
@@ -403,7 +415,15 @@ export async function runAscensionBenchmarks() {
 
   const benchmarkPayload = {
     timestamp: new Date().toISOString(),
-    benchmarkVersion: '1.0.0',
+    benchmarkVersion: '1.1.0',
+    benchmarkType: 'OFFLINE_SYNTHETIC_MICROBENCHMARK',
+    metricClassification: METRIC_CLASSIFICATION,
+    methodologyNotes: [
+      'Input tokens are ESTIMATED from prompt and dependency output text length via Math.ceil(length / 4).',
+      'Output tokens are SYNTHETIC based on typical response length models.',
+      'Total tokens reflect prompt template text reduction and DAG pruning in offline simulation, not live cloud API billing.',
+      'Real Harness session events, retries, and telemetry capture are verified separately via scripts/harness-canary-audit.mjs.',
+    ],
     scenarios: results,
     aggregate,
   }
@@ -419,10 +439,10 @@ export async function runAscensionBenchmarks() {
 
 // Print formatted summary table if run directly
 if (process.argv[1] && process.argv[1].endsWith('ascension-benchmark.mjs')) {
-  console.log('Running Ascension Multi-Agent Token Benchmark Suite...\n')
+  console.log('Running Ascension Multi-Agent Token Microbenchmark Suite (Synthetic / Estimated)...\n')
   const payload = await runAscensionBenchmarks()
   console.log('===================================================================================================')
-  console.log('                      PROJECT ASCENSION — MULTI-AGENT TOKEN BENCHMARK RESULTS                       ')
+  console.log('            PROJECT ASCENSION — SYNTHETIC MULTI-AGENT MICROBENCHMARK RESULTS (OFFLINE)              ')
   console.log('===================================================================================================')
   console.log(
     'Scenario'.padEnd(52) +
@@ -450,10 +470,14 @@ if (process.argv[1] && process.argv[1].endsWith('ascension-benchmark.mjs')) {
   }
 
   console.log('===================================================================================================')
-  console.log('AGGREGATE TOKEN CONSUMPTION ACROSS ALL SCENARIOS:')
+  console.log('AGGREGATE PROMPT/CONTEXT REDUCTION ACROSS ALL SCENARIOS (ESTIMATED/SYNTHETIC TOKENS):')
   console.log(`- Baseline (Legacy):  ${payload.aggregate.baseline.totalTokens.toLocaleString()} tokens`)
   console.log(`- Normal Mode:        ${payload.aggregate.normal.totalTokens.toLocaleString()} tokens (Reduction: ${payload.aggregate.normal.savingsPercentageVsBaseline}%, Saved: ${payload.aggregate.normal.savingsTokensVsBaseline.toLocaleString()} tokens)`)
   console.log(`- Economy Mode:       ${payload.aggregate.economy.totalTokens.toLocaleString()} tokens (Reduction: ${payload.aggregate.economy.savingsPercentageVsBaseline}%, Saved: ${payload.aggregate.economy.savingsTokensVsBaseline.toLocaleString()} tokens)`)
+  console.log('---------------------------------------------------------------------------------------------------')
+  console.log('NOTE: These values represent offline character-heuristic estimations on prompts and dependency')
+  console.log('contexts. Real Harness session telemetry, retry handling, and budget stops are verified via')
+  console.log('scripts/harness-canary-audit.mjs.')
   console.log('===================================================================================================')
   console.log('Results saved to benchmark-results.json\n')
 }

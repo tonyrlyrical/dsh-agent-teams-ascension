@@ -287,7 +287,7 @@ Attempt: ${ticket.attempt}
 Attempt id: ${ticket.attemptId}
 
 ${ticket.operatingMode === 'economy'
-  ? `Claim task ${ticket.taskId} (attempt_id=${ticket.attemptId}). Mark in_progress first, then completed or failed. Submit required structured fields for quality kinds. Send message to captain and become idle.`
+  ? `Claim task ${ticket.taskId} (attempt_id=${ticket.attemptId}). Mark in_progress first, then completed or failed. Submit required structured fields for quality kinds. Send message to captain and become idle. (If prerequisite outputs were truncated, full task details are in agent_teams_status.)`
   : `Call agent_teams_claim_task for ${ticket.taskId}; it will return this same attempt_id. Include attempt_id=${ticket.attemptId} in every agent_teams_update_task call. If it is rejected as stale, stop work because the task was reassigned. claimed cannot jump to completed. Mark in_progress first, then completed or failed. Include attempt_id on every update. Then send_message to captain with source_task_id and source_attempt_id and become idle.
 When finishing: use status=completed only when the task's success criteria are satisfied; use status=failed when blocking findings or validation failures mean downstream work must not proceed; include a concise output in either case. Quality kinds must submit structured fields: review/requirements need verdict=pass to complete (needs_revision/reject must fail with findings); implementation/repair/verification/integration need acceptanceResults and commandsRun, while implementation/repair also need in-scope changedPaths. Use status values "passed" or "failed" inside those arrays. After the work and verification finish, call agent_teams_update_task immediately; do not wait for captain confirmation and do not continue exploring. Do not approve your own implementation. Mail is not a formal next review. Completed work must not be repeated to attach late evidence: call update_task on the original task with its attempt_id and acceptanceResults/commandsRun/evidence_note; supplements are append-only and cannot change its verdict. Treat the dependency results above as source material. Do not ignore them. Work only this task and only its in-scope paths in this turn.`}
 
@@ -347,6 +347,8 @@ export function installTeamScheduler(ctx: Context, config: SchedulerConfig): Tea
         for (const member of priority) {
           await runtime.kickMember(workspace, teamId, member.name, captain)
         }
+
+        if (team.budgetExceeded === true) return
 
         let launched = 0
         for (const member of others) {
@@ -417,6 +419,9 @@ export function installTeamScheduler(ctx: Context, config: SchedulerConfig): Tea
           const recoverOwned = owned !== undefined
             && (owned.attemptId === undefined || owned.attemptId !== parkedAttemptId)
           if (!recoverOwned) {
+            if (fresh.budgetExceeded === true) {
+              return undefined
+            }
             const maxWorkers = fresh.maxConcurrentWorkers ?? (fresh.operatingMode === 'economy' ? 2 : undefined)
             if (maxWorkers !== undefined) {
               const currentWorkingCount = fresh.members.filter(m => m.status === 'working' && m.name !== memberName).length

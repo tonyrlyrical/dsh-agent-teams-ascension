@@ -1,6 +1,19 @@
 {
-  "timestamp": "2026-10-11T21:47:54.808Z",
-  "benchmarkVersion": "1.0.0",
+  "timestamp": "2026-10-11T22:14:10.230Z",
+  "benchmarkVersion": "1.1.0",
+  "benchmarkType": "OFFLINE_SYNTHETIC_MICROBENCHMARK",
+  "metricClassification": {
+    "inputTokens": "ESTIMATED",
+    "outputTokens": "SYNTHETIC",
+    "totalTokens": "SYNTHETIC_ESTIMATED_HYBRID",
+    "concurrency": "ACTUAL"
+  },
+  "methodologyNotes": [
+    "Input tokens are ESTIMATED from prompt and dependency output text length via Math.ceil(length / 4).",
+    "Output tokens are SYNTHETIC based on typical response length models.",
+    "Total tokens reflect prompt template text reduction and DAG pruning in offline simulation, not live cloud API billing.",
+    "Real Harness session events, retries, and telemetry capture are verified separately via scripts/harness-canary-audit.mjs."
+  ],
   "scenarios": [
     {
       "scenario": "Scenario 1: Small Self-Contained Task",
@@ -24,9 +37,9 @@
       "scenario": "Scenario 1: Small Self-Contained Task",
       "mode": "economy",
       "invocations": 1,
-      "inputTokens": 193,
+      "inputTokens": 214,
       "outputTokens": 120,
-      "totalTokens": 313,
+      "totalTokens": 334,
       "peakWorkers": 1
     },
     {
@@ -51,9 +64,9 @@
       "scenario": "Scenario 2: Parallel Independent Subtasks (4 workers)",
       "mode": "economy",
       "invocations": 4,
-      "inputTokens": 776,
+      "inputTokens": 864,
       "outputTokens": 600,
-      "totalTokens": 1376,
+      "totalTokens": 1464,
       "peakWorkers": 2
     },
     {
@@ -78,9 +91,9 @@
       "scenario": "Scenario 3: Sequential Deep DAG Pipeline (5 stages)",
       "mode": "economy",
       "invocations": 5,
-      "inputTokens": 839,
+      "inputTokens": 948,
       "outputTokens": 1000,
-      "totalTokens": 1839,
+      "totalTokens": 1948,
       "peakWorkers": 1
     },
     {
@@ -105,9 +118,9 @@
       "scenario": "Scenario 4: Large Intermediate Result Passing",
       "mode": "economy",
       "invocations": 1,
-      "inputTokens": 438,
+      "inputTokens": 460,
       "outputTokens": 180,
-      "totalTokens": 618,
+      "totalTokens": 640,
       "peakWorkers": 1
     },
     {
@@ -132,9 +145,9 @@
       "scenario": "Scenario 5: Worker Failure & Fault Recovery (2 turns)",
       "mode": "economy",
       "invocations": 2,
-      "inputTokens": 327,
+      "inputTokens": 371,
       "outputTokens": 190,
-      "totalTokens": 517,
+      "totalTokens": 561,
       "peakWorkers": 1
     }
   ],
@@ -154,12 +167,12 @@
       "savingsPercentageVsBaseline": 44.5
     },
     "economy": {
-      "totalInputTokens": 2573,
+      "totalInputTokens": 2857,
       "totalOutputTokens": 2090,
-      "totalTokens": 4663,
+      "totalTokens": 4947,
       "totalInvocations": 13,
-      "savingsTokensVsBaseline": 16063,
-      "savingsPercentageVsBaseline": 77.5
+      "savingsTokensVsBaseline": 15779,
+      "savingsPercentageVsBaseline": 76.1
     }
   }
 }

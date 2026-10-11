@@ -298,3 +298,149 @@ test('exportReportToCsv and saveTeamTokenReport produces valid file outputs', as
     cleanup()
   }
 })
+
+test('retry attempts on the same turn/step do not collapse into single event', async () => {
+  const { root, cleanup } = makeTempState()
+  try {
+    const attempt1 = {
+      id: 'sess-worker:1:0:att-1',
+      teamId: 'team-retry',
+      taskId: 't1',
+      attemptId: 'att-1',
+      agentId: 'ag-1',
+      agentName: 'worker',
+      role: 'coder',
+      sessionId: 'sess-worker',
+      provider: 'deepseek-official',
+      model: 'deepseek-chat',
+      turn: 1,
+      step: 0,
+      timestamp: 1000,
+      durationMs: 100,
+      outcome: 'failed',
+      quality: 'exact',
+      inputTokens: 500,
+      outputTokens: 50,
+      totalTokens: 550,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      reasoningTokens: 0,
+      toolCallsCount: 0,
+      operatingMode: 'economy',
+      isRetry: false,
+    }
+
+    const attempt2 = {
+      ...attempt1,
+      id: 'sess-worker:1:0:att-2',
+      attemptId: 'att-2',
+      timestamp: 1200,
+      outcome: 'completed',
+      isRetry: true,
+      outputTokens: 150,
+      totalTokens: 650,
+    }
+
+    const res1 = await recordTokenUsageEvent(root, 'team-retry', attempt1)
+    assert.equal(res1.recorded, true)
+    assert.equal(res1.duplicate, false)
+
+    // Second attempt on SAME turn and step, but distinct attempt
+    const res2 = await recordTokenUsageEvent(root, 'team-retry', attempt2)
+    assert.equal(res2.recorded, true, 'retry attempt must be recorded')
+    assert.equal(res2.duplicate, false, 'retry attempt must not be dropped as duplicate')
+
+    // Replay of attempt2 MUST be detected as duplicate
+    const res2Duplicate = await recordTokenUsageEvent(root, 'team-retry', attempt2)
+    assert.equal(res2Duplicate.recorded, false)
+    assert.equal(res2Duplicate.duplicate, true)
+
+    const ledger = await readTokenLedger(root, 'team-retry')
+    assert.equal(ledger.events.length, 2, 'both attempts recorded in ledger')
+    assert.equal(ledger.events[0].outcome, 'failed')
+    assert.equal(ledger.events[1].outcome, 'completed')
+  } finally {
+    cleanup()
+  }
+})
+
+test('unknown invocations correctly lower coverage and flag budget limitations', () => {
+  const team = {
+    id: 'team-unk',
+    name: 'Unknown Telemetry Team',
+    createdAt: 1000,
+    operatingMode: 'normal',
+    budgetExceeded: true,
+    captainSessionId: 'sess-c',
+    members: [{ name: 'worker', role: 'dev', status: 'idle' }],
+    tasks: [{ id: 't1', subject: 'task', status: 'completed' }],
+  }
+
+  const ledger = {
+    schemaVersion: 1,
+    teamId: 'team-unk',
+    deduplicatedKeys: ['k1', 'k2'],
+    events: [
+      {
+        id: 'ev-1',
+        teamId: 'team-unk',
+        taskId: 't1',
+        agentId: 'a1',
+        agentName: 'worker',
+        role: 'dev',
+        sessionId: 's1',
+        provider: 'unknown',
+        model: 'unknown',
+        turn: 1,
+        step: 0,
+        timestamp: 1000,
+        durationMs: 100,
+        outcome: 'completed',
+        quality: 'exact',
+        inputTokens: 500,
+        outputTokens: 100,
+        totalTokens: 600,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+        reasoningTokens: 0,
+        toolCallsCount: 0,
+        operatingMode: 'normal',
+        isRetry: false,
+      },
+      {
+        id: 'ev-2',
+        teamId: 'team-unk',
+        taskId: 't1',
+        agentId: 'a1',
+        agentName: 'worker',
+        role: 'dev',
+        sessionId: 's1',
+        provider: 'unknown',
+        model: 'unknown',
+        turn: 2,
+        step: 0,
+        timestamp: 2000,
+        durationMs: 100,
+        outcome: 'completed',
+        quality: 'unknown',
+        inputTokens: 0,
+        outputTokens: 0,
+        totalTokens: 0,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+        reasoningTokens: 0,
+        toolCallsCount: 0,
+        operatingMode: 'normal',
+        isRetry: false,
+      },
+    ],
+  }
+
+  const report = generateTeamTokenReport(team, ledger)
+  assert.equal(report.totalInvocations, 2)
+  assert.equal(report.exactInvocations, 1)
+  assert.equal(report.unknownInvocations, 1)
+  assert.equal(report.exactCoveragePercentage, 50)
+  assert.ok(report.measurementLimitations.some(m => m.includes('1 invocation(s) lacked authoritative usage')))
+  assert.ok(report.measurementLimitations.some(m => m.includes('Budget tracking is based on partial telemetry')))
+})

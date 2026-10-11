@@ -38,6 +38,7 @@ export interface TokenUsageEvent {
     readonly toolCallsCount: number;
     readonly operatingMode: 'normal' | 'economy';
     readonly isRetry: boolean;
+    readonly seq?: number;
     readonly errorDetails?: string;
 }
 /** Aggregated usage statistics for one participating agent. */
@@ -125,7 +126,7 @@ export interface TokenLedgerState {
     readonly deduplicatedKeys: string[];
 }
 /** Compute stable event key for deduplication. */
-export declare function tokenEventKey(sessionId: string, turn: number, step: number): string;
+export declare function tokenEventKey(sessionId: string, turn: number, step: number, seqOrAttempt?: number | string): string;
 /** Load the team's token ledger from disk, returning an empty ledger if absent. */
 export declare function readTokenLedger(stateRoot: string, teamId: string): Promise<TokenLedgerState>;
 /** Persist the token ledger atomically to disk. */
