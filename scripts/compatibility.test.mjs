@@ -49,7 +49,15 @@ test('doctor runs through an installed bin symlink and reports success or failur
   mkdirSync(host)
   writeFileSync(join(host, 'package.json'), JSON.stringify({ name: '@deepseek-ai/dsh', version: policy.recommendedHost }))
   const bin = join(root, 'dsh-agent-teams-doctor')
-  symlinkSync(fileURLToPath(new URL('./doctor.mjs', import.meta.url)), bin, 'file')
+  try {
+    symlinkSync(fileURLToPath(new URL('./doctor.mjs', import.meta.url)), bin, 'file')
+  } catch (err) {
+    if (process.platform === 'win32' && err.code === 'EPERM') {
+      t.skip('Windows non-admin cannot create symlinks')
+      return
+    }
+    throw err
+  }
   // Unix executes the installed shebang directly. Windows does not implement
   // shebangs: invoke Node with the same symlink path, retaining the argv[1]
   // versus import.meta.url regression without relying on a command shell.

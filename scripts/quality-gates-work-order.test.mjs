@@ -265,7 +265,11 @@ test('#174: illegal scope patterns are rejected, never widened to the workspace 
   }
 })
 
-test('#174: traversal never follows a symlink out of the workspace or into a cycle', { skip: artifacts === undefined && 'artifacts module missing in this build' }, () => {
+test('#174: traversal never follows a symlink out of the workspace or into a cycle', {
+  skip: artifacts === undefined
+    ? 'artifacts module missing in this build'
+    : process.platform === 'win32' ? 'symlink probe' : false,
+}, () => {
   const root = workspace()
   const outside = mkdtempSync(join(tmpdir(), 'issue174-outside-'))
   try {

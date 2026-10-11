@@ -1303,13 +1303,12 @@ try {
   // can stall on transient rename EPERM retries (issue #108), so poll for
   // settlement instead of guessing a fixed wait.
   let afterCaptainIdle = await state()
-  for (let waited = 0; waited < 2000; waited += 20) {
-    // A torn read during a degraded non-atomic overwrite must not kill the
-    // run; treat it as "not settled yet" and keep polling.
-    const settled = ((afterCaptainIdle?.tasks.filter(candidate => (
+  for (let waited = 0; waited < 5000; waited += 20) {
+    const matching = afterCaptainIdle?.tasks.filter(candidate => (
       candidate.id === t8.task_id || candidate.id === t9.task_id
-    )) ?? []).every(candidate => candidate.assignee !== 'captain'
-      && (candidate.status === 'claimed' || candidate.status === 'in_progress')))
+    )) ?? []
+    const settled = matching.length === 2 && matching.every(candidate => candidate.assignee !== 'captain'
+      && (candidate.status === 'claimed' || candidate.status === 'in_progress'))
     if (settled) break
     await new Promise(resolve => setTimeout(resolve, 20))
     afterCaptainIdle = await state().catch(() => undefined)
@@ -1320,7 +1319,8 @@ try {
   check('unfinished captain takeover returns to a member when the captain becomes idle',
     recoveredParallel.length === 2
       && recoveredParallel.every(candidate => candidate.assignee !== 'captain')
-      && recoveredParallel.every(candidate => candidate.status === 'claimed' || candidate.status === 'in_progress'))
+      && recoveredParallel.every(candidate => candidate.status === 'claimed' || candidate.status === 'in_progress'),
+    `recovered: ${JSON.stringify(recoveredParallel.map(t => ({ id: t.id, status: t.status, assignee: t.assignee })))}`)
   for (const recoveredTask of recoveredParallel) {
     const owner = recoveredTask.assignee === 'beta' ? beta : gamma
     owner.status = 'running'
@@ -1471,7 +1471,7 @@ try {
   }
   const bridgeState = () => readTeamStable('failure-bridge')
   const bridgeTask = async () => (await bridgeState())?.tasks.find(candidate => candidate.id === flakeTask.task_id)
-  for (let waited = 0; waited < 2000; waited += 20) {
+  for (let waited = 0; waited < 5000; waited += 20) {
     if ((await bridgeTask())?.status === 'failed' && captain.steers.length > captainSteersBeforeFailure
       && deliveries.length === deliveriesBeforeFailure
       && (await readUnreadMailbox(stateRoot, 'failure-bridge', 'flake')).length === 0) break
