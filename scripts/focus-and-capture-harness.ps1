@@ -1,5 +1,5 @@
 param(
-    [string]$OutputPath = "evidence/desktop-validation/screenshots/harness-window-01.png"
+    [string]$OutputPath = "evidence/desktop-validation/screenshots/harness-default-capture.png"
 )
 
 $source = @"
@@ -12,13 +12,7 @@ using System.Drawing;
 using System.Drawing.Imaging;
 using System.Diagnostics;
 
-public class HarnessWindowCapture {
-    [DllImport("user32.dll")]
-    public static extern IntPtr GetProcessWindowStation();
-    [DllImport("user32.dll")]
-    public static extern bool EnumDesktops(IntPtr hwinsta, EnumDesktopProc lpEnumCallback, IntPtr lParam);
-    public delegate bool EnumDesktopProc(string lpszDesktop, IntPtr lParam);
-
+public class HarnessDefaultCapture {
     [DllImport("user32.dll", SetLastError = true)]
     public static extern IntPtr OpenDesktop(string lpszDesktop, uint dwFlags, bool fInherit, uint dwDesiredAccess);
     [DllImport("user32.dll", SetLastError = true)]
@@ -50,86 +44,77 @@ public class HarnessWindowCapture {
     [DllImport("user32.dll", SetLastError = true)]
     public static extern bool PrintWindow(IntPtr hWnd, IntPtr hdcBlt, uint nFlags);
 
-    public static string FocusAndCapture(string outputPath) {
+    public static string CaptureDefaultHarness(string outputPath) {
         string summary = "";
         Thread t = new Thread(() => {
             try {
-                IntPtr hWs = GetProcessWindowStation();
-                List<string> desktops = new List<string>();
-                EnumDesktops(hWs, (name, lParam) => {
-                    desktops.Add(name);
-                    return true;
-                }, IntPtr.Zero);
+                // Strictly target Default desktop only
+                IntPtr hDesk = OpenDesktop("Default", 0, false, 0x01FF);
+                if (hDesk == IntPtr.Zero) {
+                    summary = "Error: OpenDesktop('Default') failed";
+                    return;
+                }
+                SetThreadDesktop(hDesk);
 
                 IntPtr foundHwnd = IntPtr.Zero;
-                string foundDesk = "";
                 string foundTitle = "";
                 RECT foundRect = new RECT();
 
-                foreach (string dName in desktops) {
-                    IntPtr hDesk = OpenDesktop(dName, 0, false, 0x01FF);
-                    if (hDesk == IntPtr.Zero) continue;
-                    SetThreadDesktop(hDesk);
+                EnumDesktopWindows(hDesk, (hWnd, lParam) => {
+                    if (IsWindowVisible(hWnd)) {
+                        uint pid;
+                        GetWindowThreadProcessId(hWnd, out pid);
+                        var sb = new StringBuilder(256);
+                        GetWindowText(hWnd, sb, sb.Capacity);
+                        string title = sb.ToString();
 
-                    EnumDesktopWindows(hDesk, (hWnd, lParam) => {
-                        if (IsWindowVisible(hWnd)) {
-                            uint pid;
-                            GetWindowThreadProcessId(hWnd, out pid);
-                            var sb = new StringBuilder(256);
-                            GetWindowText(hWnd, sb, sb.Capacity);
-                            string title = sb.ToString();
+                        RECT r;
+                        GetWindowRect(hWnd, out r);
+                        int w = r.Right - r.Left;
+                        int h = r.Bottom - r.Top;
 
-                            RECT r;
-                            GetWindowRect(hWnd, out r);
-                            int w = r.Right - r.Left;
-                            int h = r.Bottom - r.Top;
+                        bool isDsh = false;
+                        try {
+                            var p = Process.GetProcessById((int)pid);
+                            if (p.ProcessName.IndexOf("DeepSeek", StringComparison.OrdinalIgnoreCase) >= 0) isDsh = true;
+                        } catch {}
 
-                            bool isDsh = false;
-                            try {
-                                var p = Process.GetProcessById((int)pid);
-                                if (p.ProcessName.IndexOf("DeepSeek", StringComparison.OrdinalIgnoreCase) >= 0) isDsh = true;
-                            } catch {}
-
-                            if ((title.IndexOf("DeepSeek", StringComparison.OrdinalIgnoreCase) >= 0 || isDsh) && w > 400 && h > 300) {
-                                foundHwnd = hWnd;
-                                foundDesk = dName;
-                                foundTitle = string.IsNullOrEmpty(title) ? ("DeepSeek PID " + pid) : title;
-                                foundRect = r;
-                                return false;
-                            }
+                        if ((title.IndexOf("DeepSeek", StringComparison.OrdinalIgnoreCase) >= 0 || isDsh) && w > 400 && h > 300) {
+                            foundHwnd = hWnd;
+                            foundTitle = string.IsNullOrEmpty(title) ? ("DeepSeek PID " + pid) : title;
+                            foundRect = r;
+                            return false;
                         }
-                        return true;
-                    }, IntPtr.Zero);
-
-                    if (foundHwnd != IntPtr.Zero) {
-                        ShowWindow(foundHwnd, 9); // SW_RESTORE
-                        SetForegroundWindow(foundHwnd);
-                        BringWindowToTop(foundHwnd);
-                        Thread.Sleep(500);
-
-                        GetWindowRect(foundHwnd, out foundRect);
-                        int width = foundRect.Right - foundRect.Left;
-                        int height = foundRect.Bottom - foundRect.Top;
-
-                        if (width > 0 && height > 0) {
-                            using (Bitmap bmp = new Bitmap(width, height)) {
-                                using (Graphics g = Graphics.FromImage(bmp)) {
-                                    IntPtr hdc = g.GetHdc();
-                                    bool success = PrintWindow(foundHwnd, hdc, 2);
-                                    if (!success) success = PrintWindow(foundHwnd, hdc, 0);
-                                    g.ReleaseHdc(hdc);
-                                }
-                                bmp.Save(outputPath, ImageFormat.Png);
-                            }
-                            summary = "Captured '" + foundTitle + "' on desktop '" + foundDesk + "' (" + width + "x" + height + ") -> " + outputPath;
-                        }
-                        CloseDesktop(hDesk);
-                        break;
                     }
-                    CloseDesktop(hDesk);
-                }
+                    return true;
+                }, IntPtr.Zero);
 
-                if (foundHwnd == IntPtr.Zero) summary = "No DeepSeek Harness window found on any desktop.";
+                if (foundHwnd != IntPtr.Zero) {
+                    ShowWindow(foundHwnd, 9); // SW_RESTORE
+                    SetForegroundWindow(foundHwnd);
+                    BringWindowToTop(foundHwnd);
+                    Thread.Sleep(300);
+
+                    GetWindowRect(foundHwnd, out foundRect);
+                    int width = foundRect.Right - foundRect.Left;
+                    int height = foundRect.Bottom - foundRect.Top;
+
+                    if (width > 0 && height > 0) {
+                        using (Bitmap bmp = new Bitmap(width, height)) {
+                            using (Graphics g = Graphics.FromImage(bmp)) {
+                                IntPtr hdc = g.GetHdc();
+                                bool success = PrintWindow(foundHwnd, hdc, 2);
+                                if (!success) success = PrintWindow(foundHwnd, hdc, 0);
+                                g.ReleaseHdc(hdc);
+                            }
+                            bmp.Save(outputPath, ImageFormat.Png);
+                        }
+                        summary = "Captured '" + foundTitle + "' on desktop 'Default' (" + width + "x" + height + ") -> " + outputPath;
+                    }
+                } else {
+                    summary = "No DeepSeek Harness window found on desktop 'Default'.";
+                }
+                CloseDesktop(hDesk);
             } catch (Exception ex) {
                 summary = "Error: " + ex.Message;
             }
@@ -149,5 +134,5 @@ if (-not (Test-Path $targetDir)) {
 }
 
 Add-Type -TypeDefinition $source -ReferencedAssemblies "System.Drawing"
-$res = [HarnessWindowCapture]::FocusAndCapture($targetPath)
+$res = [HarnessDefaultCapture]::CaptureDefaultHarness($targetPath)
 Write-Output $res
