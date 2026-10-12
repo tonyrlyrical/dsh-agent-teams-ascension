@@ -63,11 +63,21 @@ export function invokedAgentTeamsGoal(messages: readonly UserMessage[]): string 
   return invokedAgentTeamsInvocation(messages)?.goal
 }
 
-export function buildActivationDirective(goal: string, profile?: string, taskPlanning: 'captain' | 'seed' = 'seed'): string {
+export function buildActivationDirective(
+  goal: string,
+  profile?: string,
+  taskPlanning: 'captain' | 'seed' = 'seed',
+  operatingMode?: 'normal' | 'economy',
+): string {
   const lines = [
     'The user invoked an AgentTeams slash command. Follow the AgentTeams protocol already in your system instructions. Inspect existing team state with agent_teams_status when needed.',
     'Respect the current team state. Continue an existing plan or team without recreating it. Only when no current team exists, call agent_teams_create with approval="required". Build the complete staged roster and DAG, then stop and ask the user to review the Web plan. Do not approve or start it in this same turn.',
   ]
+  if (operatingMode === 'economy') {
+    lines.push('Use operating_mode="economy" when calling agent_teams_create to enforce Caveman brevity and payload truncation.')
+  } else if (operatingMode === 'normal') {
+    lines.push('Use operating_mode="normal" when calling agent_teams_create.')
+  }
   if (profile !== undefined) {
     lines.push(`Use profile="${profile}" when creating a new team.`)
     if (taskPlanning === 'captain') {
@@ -90,14 +100,14 @@ export function registerAgentTeamsCommand(ctx: Context, getProfiles: () => Recor
     dispose.push(ctx.commands.register({
       name: AGENT_TEAMS_COMMAND,
       description: 'run a goal with a multi-agent team (you become the captain)',
-      input: { hint: '[--profile <name>] <goal>' },
+      input: { hint: '[--economy|--mode <normal|economy>] [--profile <name>] <goal>' },
       handler(invocation: CommandInvocation): CommandResult {
         let parsed: AgentTeamsInvocation
         try { parsed = parseProfileInvocation(invocation.rawInput.trim()) } catch (error: unknown) { return { kind: 'error', text: String(error) } }
         if (parsed.profile !== undefined && !Object.keys(getProfiles()).some(key => key.trim() === parsed.profile)) return { kind: 'error', text: `unknown AgentTeams profile "${parsed.profile}"` }
-        if (parsed.profile === undefined && parsed.goal === '') return { kind: 'error', text: `Usage: /${AGENT_TEAMS_COMMAND} [--profile <name>] <goal>` }
+        if (parsed.profile === undefined && parsed.goal === '') return { kind: 'error', text: `Usage: /${AGENT_TEAMS_COMMAND} [--economy|--mode <normal|economy>] [--profile <name>] <goal>` }
         invocation.agent.followup(createUserMessage({ content: [{ type: 'text', text: `/${AGENT_TEAMS_COMMAND}${invocation.rawInput}` }], source: { kind: 'user' } }))
-        return { kind: 'success', text: `AgentTeams activated${parsed.profile === undefined ? '' : ` with profile ${parsed.profile}`} — the captain will assemble the team.` }
+        return { kind: 'success', text: `AgentTeams activated${parsed.profile === undefined ? '' : ` with profile ${parsed.profile}`}${parsed.operatingMode === undefined ? '' : ` (mode: ${parsed.operatingMode})`} — the captain will assemble the team.` }
       },
     }))
     for (const profileName of Object.keys(getProfiles())) {
@@ -136,7 +146,12 @@ export function installAgentTeamsGestureBoundary(ctx: Context, getProfiles: () =
     const known = invocation.profile === undefined || matched !== undefined
     const text = !known
       ? `AgentTeams profile "${invocation.profile}" does not exist. Available profiles: ${Object.keys(profiles).join(', ') || '(none)'}. Do not create a team.`
-      : buildActivationDirective(invocation.goal, invocation.profile, resolveProfileTaskPlanning(matched?.[1]))
+      : buildActivationDirective(
+          invocation.goal,
+          invocation.profile,
+          resolveProfileTaskPlanning(matched?.[1]),
+          invocation.operatingMode,
+        )
     return { kind: 'enter', messages: [...decision.messages, createUserMessage({ content: [{ type: 'text', text }], source: agentTeamsSource({ kind: 'agent-teams-command', ...invocation.goal === '' ? {} : { goal: invocation.goal }, ...invocation.profile === undefined ? {} : { profile: invocation.profile } }) })] }
   })
 }

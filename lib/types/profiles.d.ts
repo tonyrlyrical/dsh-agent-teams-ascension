@@ -95,6 +95,7 @@ export interface NormalizedTeamProfile {
 export interface AgentTeamsInvocation {
     goal: string;
     profile?: string;
+    operatingMode?: 'normal' | 'economy';
 }
 /** One configured profile after key trim, for listing / lookup. */
 export interface ListedTeamProfile {

@@ -23,7 +23,7 @@
  * @module dsh-agent-teams/caveman/rules
  */
 
-/** Core system instructions for Caveman terse output formatting. */
+/** Detailed system instructions for Caveman terse output formatting. */
 export const CAVEMAN_PROMPT_INSTRUCTIONS = `
 [Economy Mode - Caveman Output Brevity Protocol]
 1. Answer First: State conclusion, key fact or status directly on the first line. No greetings, no preamble.
@@ -36,11 +36,19 @@ export const CAVEMAN_PROMPT_INSTRUCTIONS = `
 `.trim()
 
 /**
+ * Ultra-low-overhead directive (~24 tokens / 95 chars) for recurring task ticket injection.
+ * Prevents input prompt inflation on short tasks while enforcing identical brevity.
+ */
+export const CAVEMAN_COMPACT_DIRECTIVE =
+  '[Brevity: Answer directly line 1. Zero filler/fluff. Code, paths, and errors verbatim.]'
+
+/**
  * Returns prompt guidance for a task or member under Caveman Economy mode.
  */
-export function formatCavemanInstruction(prefix?: string): string {
-  if (!prefix) return CAVEMAN_PROMPT_INSTRUCTIONS
-  return `${prefix}\n\n${CAVEMAN_PROMPT_INSTRUCTIONS}`
+export function formatCavemanInstruction(prefix?: string, compact: boolean = false): string {
+  const instruction = compact ? CAVEMAN_COMPACT_DIRECTIVE : CAVEMAN_PROMPT_INSTRUCTIONS
+  if (!prefix) return instruction
+  return `${prefix}\n\n${instruction}`
 }
 
 /**
@@ -57,16 +65,16 @@ export function applySyntheticCavemanVoice(input: string): string {
     return `__CAVEMAN_CODE_BLOCK_${codeBlocks.length - 1}__`
   })
 
-  // Eliminate common filler phrases
+  // Eliminate common conversational filler phrases
   let compressed = protectedText
-    .replace(/^(hello|hi|greetings|dear user)[,.! ]*/gim, '')
-    .replace(/(i hope this helps|let me know if you need anything else|have a great day)[.!]*/gim, '')
-    .replace(/(certainly!|sure,|of course,|as requested,|based on my analysis,|in conclusion,)/gim, '')
-    .replace(/(i would be happy to help|here is the result of the|let's get started)/gim, '')
+    .replace(/^(hello|hi|greetings|dear user|hey there)[,.! ]*/gim, '')
+    .replace(/(i hope this helps|let me know if you need anything else|have a great day|best regards|cheers)[.!]*/gim, '')
+    .replace(/(certainly!|sure,|of course,|as requested,|based on my analysis,|in conclusion,|to summarize,)/gim, '')
+    .replace(/(i would be happy to help|here is the result of the|let's get started|as an ai assistant,?)/gim, '')
     .replace(/please note that\s+/gim, 'Note: ')
     .replace(/it is important to remember that\s+/gim, 'Note: ')
     .replace(/in order to\s+/gim, 'to ')
-    .replace(/\b(basically|actually|essentially|literally)\b\s*/gim, '')
+    .replace(/\b(basically|actually|essentially|literally|kind of|sort of)\b\s*/gim, '')
 
   // Collapse multiple blank lines
   compressed = compressed.replace(/\n{3,}/g, '\n\n').trim()

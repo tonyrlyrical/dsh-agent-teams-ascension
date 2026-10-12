@@ -3,14 +3,16 @@
  *
  * Implements structural compression for tool results, tabular CSVs, test logs,
  * stack traces and JSON diagnostics, with an in-process content-addressable
- * store for exact, byte-for-byte payload recovery.
+ * store and optional disk persistence for exact, byte-for-byte payload recovery.
  *
- * Inspired by JuliusBrussee/caveman (Apache-2.0).
+ * Inspired by the brevity philosophy of JuliusBrussee/caveman (Apache-2.0).
  *
  * @module dsh-agent-teams/caveman/proxy-engine
  */
 
 import { createHash, randomUUID } from 'node:crypto'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 
 /** Configuration options for payload compression. */
 export interface CompressionOptions {
@@ -20,6 +22,18 @@ export interface CompressionOptions {
   minSavingsPercent?: number
   /** Force compression even if savings are marginal. Default: false. */
   force?: boolean
+  /** Team ID to associate this payload with for session isolation. */
+  teamId?: string
+  /** State root directory for disk-backed persistence. */
+  stateRoot?: string
+}
+
+/** Options for payload recovery. */
+export interface RecoveryOptions {
+  /** Team ID to verify caller belongs to the same team. */
+  teamId?: string
+  /** State root directory to look for disk-persisted payload if memory cache misses. */
+  stateRoot?: string
 }
 
 /** Result of a payload compression attempt. */
@@ -47,11 +61,17 @@ interface StoredPayload {
   readonly createdAt: number
   readonly byteSize: number
   readonly category: string
+  readonly teamId?: string
+}
+
+function sanitizePayloadId(id: string): string {
+  return id.replace(/[^a-zA-Z0-9_-]/g, '_')
 }
 
 /**
  * In-process Content-Addressable Storage for uncompressed payloads.
- * Implements LRU eviction and memory bounds (max 50 MB, max 500 entries).
+ * Implements LRU eviction, memory bounds (max 50 MB, max 500 entries),
+ * and disk-backed persistence for cross-restart survivability.
  */
 export class CavemanPayloadStore {
   private readonly store = new Map<string, StoredPayload>()
@@ -67,10 +87,20 @@ export class CavemanPayloadStore {
   }
 
   /**
-   * Stores a payload and returns a stable recovery ID.
+   * Stores a payload and returns a stable recovery ID, or null if capacity exceeded.
    */
-  storePayload(content: string, category: string): string {
+  storePayload(
+    content: string,
+    category: string,
+    options?: { teamId?: string; stateRoot?: string },
+  ): string | null {
     const byteSize = Buffer.byteLength(content, 'utf8')
+
+    // Single payload exceeding maximum store capacity is rejected to protect heap
+    if (byteSize > this.maxTotalBytes) {
+      return null
+    }
+
     const hashPrefix = createHash('sha256').update(content, 'utf8').digest('hex').slice(0, 12)
     const id = `caveman-rec:${hashPrefix}-${randomUUID().slice(0, 8)}`
 
@@ -83,30 +113,86 @@ export class CavemanPayloadStore {
       createdAt: Date.now(),
       byteSize,
       category,
+      teamId: options?.teamId,
     }
 
     this.store.set(id, entry)
     this.totalBytes += byteSize
+
+    // Disk-backed persistence for restart recovery
+    if (options?.stateRoot && options?.teamId) {
+      try {
+        const teamDir = join(options.stateRoot, options.teamId, '.caveman-payloads')
+        mkdirSync(teamDir, { recursive: true })
+        const filePath = join(teamDir, `${sanitizePayloadId(id)}.json`)
+        writeFileSync(filePath, JSON.stringify(entry), 'utf8')
+      } catch {
+        // Disk persistence is best-effort; in-memory cache remains available
+      }
+    }
+
     return id
   }
 
   /**
-   * Retrieves an exact original payload by recovery ID.
+   * Retrieves an exact original payload by recovery ID, with team isolation and disk fallback.
    */
-  getPayload(id: string): string | undefined {
-    const entry = this.store.get(id)
-    if (!entry) return undefined
+  getPayload(
+    id: string,
+    options?: RecoveryOptions,
+  ): { ok: boolean; content?: string; originalBytes?: number; error?: string } {
+    if (!id || typeof id !== 'string') {
+      return { ok: false, error: 'recovery_id must be a non-empty string' }
+    }
+    const cleanId = id.trim()
 
-    // Check TTL
-    if (Date.now() - entry.createdAt > this.ttlMs) {
-      this.delete(id)
-      return undefined
+    // 1. Check in-memory store
+    const entry = this.store.get(cleanId)
+    if (entry) {
+      // Check TTL
+      if (Date.now() - entry.createdAt > this.ttlMs) {
+        this.delete(cleanId)
+      } else {
+        // Team isolation check
+        if (entry.teamId && options?.teamId && entry.teamId !== options.teamId) {
+          return { ok: false, error: `Unauthorized: payload ${cleanId} belongs to another team` }
+        }
+        // Refresh LRU order: delete and re-insert
+        this.store.delete(cleanId)
+        this.store.set(cleanId, entry)
+        return { ok: true, content: entry.content, originalBytes: entry.byteSize }
+      }
     }
 
-    // Refresh LRU order: delete and re-insert
-    this.store.delete(id)
-    this.store.set(id, entry)
-    return entry.content
+    // 2. Check disk persistence fallback
+    if (options?.stateRoot && options?.teamId) {
+      try {
+        const filePath = join(options.stateRoot, options.teamId, '.caveman-payloads', `${sanitizePayloadId(cleanId)}.json`)
+        if (existsSync(filePath)) {
+          const raw = readFileSync(filePath, 'utf8')
+          const diskEntry = JSON.parse(raw) as StoredPayload
+          if (diskEntry && diskEntry.content !== undefined) {
+            if (diskEntry.teamId && options.teamId && diskEntry.teamId !== options.teamId) {
+              return { ok: false, error: `Unauthorized: payload ${cleanId} belongs to another team` }
+            }
+            // Re-populate in-memory cache
+            if (diskEntry.byteSize <= this.maxTotalBytes) {
+              this.evictIfNeeded(diskEntry.byteSize)
+              this.store.set(cleanId, diskEntry)
+              this.totalBytes += diskEntry.byteSize
+            }
+            return { ok: true, content: diskEntry.content, originalBytes: diskEntry.byteSize }
+          }
+        }
+      } catch {
+        // Disk read failure falls through
+      }
+    }
+
+    return {
+      ok: false,
+      error: `Recovery payload not found or expired for ID "${cleanId}". Original payloads are retained for 2 hours.`,
+    }
   }
 
   /**
@@ -190,7 +276,7 @@ export const defaultPayloadStore = new CavemanPayloadStore()
  * Compresses CSV or TSV data.
  * Keeps column headers, row counts, sample data, and numeric range summaries.
  */
-function compressCsv(text: string): { compressed: string; savings: boolean } {
+export function compressCsv(text: string): { compressed: string; savings: boolean } {
   const lines = text.trim().split(/\r?\n/)
   if (lines.length < 6) return { compressed: text, savings: false }
 
@@ -205,8 +291,8 @@ function compressCsv(text: string): { compressed: string; savings: boolean } {
   const totalRows = dataRows.length
   if (totalRows < 5) return { compressed: text, savings: false }
 
-  // Sample top 2 rows and last 1 row
-  const topRows = dataRows.slice(0, 2)
+  // Sample top 3 rows and last 1 row
+  const topRows = dataRows.slice(0, 3)
   const lastRow = dataRows[dataRows.length - 1]
 
   const parts: string[] = [
@@ -215,8 +301,8 @@ function compressCsv(text: string): { compressed: string; savings: boolean } {
     ...topRows.slice(1).map((r, i) => `Row ${i + 2}: ${r}`),
   ]
 
-  if (lastRow && totalRows > 2) {
-    parts.push(`... [${totalRows - topRows.length - 1} rows elided] ...`)
+  if (lastRow && totalRows > 3) {
+    parts.push(`... [${totalRows - topRows.length - 1} rows elided; use agent_teams_recover_payload for all rows] ...`)
     parts.push(`Row ${totalRows}: ${lastRow}`)
   }
 
@@ -225,17 +311,18 @@ function compressCsv(text: string): { compressed: string; savings: boolean } {
 }
 
 /**
- * Compresses test runner output (Node test runner, Jest, Mocha, Pytest, etc.).
+ * Compresses test runner output (Node test runner, Jest, Mocha, Pytest, Vitest, etc.).
  * Retains failures, test count summary, duration, and collapses passing lines.
  */
-function compressTestLogs(text: string): { compressed: string; savings: boolean } {
+export function compressTestLogs(text: string): { compressed: string; savings: boolean } {
   const lines = text.split(/\r?\n/)
-  if (lines.length < 8) return { compressed: text, savings: false }
+  if (lines.length < 6) return { compressed: text, savings: false }
 
   const hasTestSignals = lines.some(l =>
     l.includes('✔') || l.includes('▶') || l.includes('✖') ||
     l.includes('pass') || l.includes('fail') || l.includes('tests ') ||
-    l.includes('suites ') || l.includes('PASS') || l.includes('FAIL')
+    l.includes('suites ') || l.includes('PASS') || l.includes('FAIL') ||
+    /assertion(?:error)?/i.test(l)
   )
   if (!hasTestSignals) return { compressed: text, savings: false }
 
@@ -243,24 +330,16 @@ function compressTestLogs(text: string): { compressed: string; savings: boolean 
   const summaryLines: string[] = []
   let passingCount = 0
   let isCapturingFailure = false
+  let consecutiveBlankLines = 0
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]!
-    const isPassing = /^[ \t]*(✔|PASS|ok\b)/.test(line) && !line.includes('fail')
-    const isFailing = /^[ \t]*(✖|FAIL|not ok\b)/.test(line) || line.toLowerCase().includes('failed:')
-    const isSummary = /^[ \t]*(ℹ tests|ℹ pass|ℹ fail|ℹ suites|Tests:|Suites:|Summary:|duration_ms)/.test(line)
-
-    if (isPassing) {
-      passingCount++
-      isCapturingFailure = false
-      continue
-    }
-
-    if (isFailing) {
-      isCapturingFailure = true
-      failureLines.push(line)
-      continue
-    }
+    const isPassing = /^[ \t]*(✔|PASS|ok\b)/.test(line) && !line.toLowerCase().includes('fail')
+    const isFailing = /^[ \t]*(✖|FAIL|not ok\b)/.test(line) ||
+      /\b(failed|failure|assertionerror|assertion error)\b/i.test(line) ||
+      line.trim().startsWith('● ') ||
+      /^[0-9]+\)\s+/.test(line.trim())
+    const isSummary = /^[ \t]*(ℹ tests|ℹ pass|ℹ fail|ℹ suites|Tests:|Suites:|Summary:|duration_ms|Time:|Ran all test)/i.test(line)
 
     if (isSummary) {
       isCapturingFailure = false
@@ -268,12 +347,31 @@ function compressTestLogs(text: string): { compressed: string; savings: boolean 
       continue
     }
 
+    if (isPassing) {
+      passingCount++
+      isCapturingFailure = false
+      consecutiveBlankLines = 0
+      continue
+    }
+
+    if (isFailing) {
+      isCapturingFailure = true
+      consecutiveBlankLines = 0
+      failureLines.push(line)
+      continue
+    }
+
     if (isCapturingFailure) {
-      // Capture stack trace or details belonging to failure
-      if (line.trim().startsWith('at ') || line.trim().startsWith('Error:') || line.includes('assertion')) {
+      if (line.trim() === '') {
+        consecutiveBlankLines++
+        if (consecutiveBlankLines <= 2) {
+          failureLines.push(line)
+        } else {
+          isCapturingFailure = false
+        }
+      } else {
+        consecutiveBlankLines = 0
         failureLines.push(line)
-      } else if (line.trim() === '') {
-        isCapturingFailure = false
       }
     }
   }
@@ -291,7 +389,6 @@ function compressTestLogs(text: string): { compressed: string; savings: boolean 
     parts.push(...failureLines)
   }
   if (summaryLines.length > 0) {
-    parts.push('Results:')
     parts.push(...summaryLines)
   }
 
@@ -301,29 +398,42 @@ function compressTestLogs(text: string): { compressed: string; savings: boolean 
 
 /**
  * Compresses deep stack traces.
- * Keeps error name, message, top 4 frames, collapses deep internal runtime frames.
+ * Keeps all error headers before the first stack frame, top 5 frames, and the bottom-most frame.
  */
-function compressStackTrace(text: string): { compressed: string; savings: boolean } {
+export function compressStackTrace(text: string): { compressed: string; savings: boolean } {
   const lines = text.split(/\r?\n/)
-  const stackIndices: number[] = []
+  const firstFrameIndex = lines.findIndex(l => /^[ \t]*at (?:.+ )?\(?.*:\d+:\d+\)?/.test(l))
 
-  for (let i = 0; i < lines.length; i++) {
+  if (firstFrameIndex === -1) return { compressed: text, savings: false }
+
+  const stackIndices: number[] = []
+  for (let i = firstFrameIndex; i < lines.length; i++) {
     if (/^[ \t]*at (?:.+ )?\(?.*:\d+:\d+\)?/.test(lines[i]!)) {
       stackIndices.push(i)
     }
   }
 
-  if (stackIndices.length < 8) return { compressed: text, savings: false }
+  if (stackIndices.length < 7) return { compressed: text, savings: false }
 
-  const errorLine = lines[0] ?? 'Error'
-  const topFrames = stackIndices.slice(0, 4).map(idx => lines[idx]!)
-  const elidedCount = stackIndices.length - 4
+  // Preserve all header lines prior to the first frame (error type, message, diff, causation)
+  const headerLines = lines.slice(0, firstFrameIndex).filter(l => l.trim() !== '')
+  const errorHeader = headerLines.length > 0 ? headerLines.join('\n') : (lines[0] ?? 'Error')
+
+  const topFrames = stackIndices.slice(0, 5).map(idx => lines[idx]!)
+  const bottomFrame = lines[stackIndices[stackIndices.length - 1]!]!
+  const elidedCount = stackIndices.length - 6
 
   const parts: string[] = [
-    errorLine,
+    errorHeader,
     ...topFrames,
-    `    ... [${elidedCount} internal runtime frames elided]`,
   ]
+
+  if (elidedCount > 0) {
+    parts.push(`    ... [${elidedCount} internal runtime frames elided]`)
+    parts.push(bottomFrame)
+  } else if (stackIndices.length > 5) {
+    parts.push(bottomFrame)
+  }
 
   const result = parts.join('\n')
   return { compressed: result, savings: result.length < text.length }
@@ -332,7 +442,7 @@ function compressStackTrace(text: string): { compressed: string; savings: boolea
 /**
  * Compresses verbose JSON arrays or large nested structures.
  */
-function compressJson(text: string): { compressed: string; savings: boolean } {
+export function compressJson(text: string): { compressed: string; savings: boolean } {
   const trimmed = text.trim()
   if (!((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']')))) {
     return { compressed: text, savings: false }
@@ -347,31 +457,34 @@ function compressJson(text: string): { compressed: string; savings: boolean } {
         total_items: parsed.length,
         sample_items: sample,
         omitted_count: parsed.length - sample.length,
+        note: 'Full JSON array recoverable with agent_teams_recover_payload',
       }
       const result = JSON.stringify(compressedObj, null, 2)
       return { compressed: result, savings: result.length < text.length }
     }
-
-    if (typeof parsed === 'object' && parsed !== null) {
+    if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
       let modified = false
-      const clone = { ...parsed }
-      for (const [key, val] of Object.entries(clone)) {
-        if (Array.isArray(val) && val.length > 5) {
-          clone[key] = {
-            _array_length: val.length,
-            sample: val.slice(0, 2),
-            omitted: val.length - 2,
+      const compressedObj: Record<string, unknown> = {}
+      for (const [key, val] of Object.entries(parsed)) {
+        if (Array.isArray(val) && val.length > 8) {
+          compressedObj[key] = {
+            _caveman_array_summary: true,
+            total_items: val.length,
+            sample_items: val.slice(0, 2),
+            omitted_count: val.length - 2,
           }
           modified = true
+        } else {
+          compressedObj[key] = val
         }
       }
       if (modified) {
-        const result = JSON.stringify(clone, null, 2)
+        const result = JSON.stringify(compressedObj, null, 2)
         return { compressed: result, savings: result.length < text.length }
       }
     }
   } catch {
-    // Not valid JSON or parsing error, fallback
+    // Invalid JSON, do not compress
   }
 
   return { compressed: text, savings: false }
@@ -381,7 +494,6 @@ function compressJson(text: string): { compressed: string; savings: boolean } {
  * Guard check: do not compress literal source code files.
  */
 function isSourceCode(text: string): boolean {
-  // If the text looks like raw TypeScript, JavaScript or Python source code
   const codeKeywords = [
     /\bimport\s+.*\s+from\s+['"].*['"]/,
     /\bexport\s+(?:default\s+)?(?:function|class|const|interface|type)\b/,
@@ -395,7 +507,6 @@ function isSourceCode(text: string): boolean {
     if (regex.test(text)) matches++
   }
 
-  // If matches >= 2 and it's not a test runner or stack trace, consider it code
   return matches >= 2 && !text.includes('✔') && !text.includes('FAIL') && !text.includes('at ')
 }
 
@@ -412,6 +523,17 @@ export function compressPayload(
   const originalBytes = Buffer.byteLength(rawText, 'utf8')
 
   if (!rawText || originalBytes < minBytes) {
+    return {
+      text: rawText,
+      wasCompressed: false,
+      originalBytes,
+      compressedBytes: originalBytes,
+      savingsPercent: 0,
+    }
+  }
+
+  // Reject single payload exceeding total store capacity
+  if (originalBytes > (store.stats().maxTotalBytes ?? 50 * 1024 * 1024)) {
     return {
       text: rawText,
       wasCompressed: false,
@@ -477,7 +599,20 @@ export function compressPayload(
   }
 
   // Store original payload in store
-  const recoveryId = store.storePayload(rawText, category)
+  const recoveryId = store.storePayload(rawText, category, {
+    teamId: options?.teamId,
+    stateRoot: options?.stateRoot,
+  })
+
+  if (!recoveryId) {
+    return {
+      text: rawText,
+      wasCompressed: false,
+      originalBytes,
+      compressedBytes: originalBytes,
+      savingsPercent: 0,
+    }
+  }
 
   // Append clean recovery handle
   const footer = `\n\n[caveman-proxy: compressed ${originalBytes}B -> ${compressedBytes}B (${savingsPercent}% saved). Full payload recoverable with tool agent_teams_recover_payload using recovery_id="${recoveryId}"]`
@@ -502,24 +637,7 @@ export function compressPayload(
 export function recoverPayload(
   recoveryId: string,
   store: CavemanPayloadStore = defaultPayloadStore,
+  options?: RecoveryOptions,
 ): { ok: boolean; content?: string; originalBytes?: number; error?: string } {
-  if (!recoveryId || typeof recoveryId !== 'string') {
-    return { ok: false, error: 'recovery_id must be a non-empty string' }
-  }
-
-  const cleanId = recoveryId.trim()
-  const content = store.getPayload(cleanId)
-
-  if (content === undefined) {
-    return {
-      ok: false,
-      error: `Recovery payload not found or expired for ID "${cleanId}". Original payloads have a 2-hour TTL.`,
-    }
-  }
-
-  return {
-    ok: true,
-    content,
-    originalBytes: Buffer.byteLength(content, 'utf8'),
-  }
+  return store.getPayload(recoveryId, options)
 }

@@ -112,6 +112,7 @@ export interface NormalizedTeamProfile {
 export interface AgentTeamsInvocation {
   goal: string
   profile?: string
+  operatingMode?: 'normal' | 'economy'
 }
 
 /** One configured profile after key trim, for listing / lookup. */
@@ -180,19 +181,53 @@ export function parseProfileInvocation(rawInput: string): AgentTeamsInvocation {
   const tokens = tokenize(rawInput)
   let index = 0
   let profile: string | undefined
+  let operatingMode: 'normal' | 'economy' | undefined
   while (index < tokens.length) {
     const token = tokens[index]
     if (token === undefined) break
     const parsed = parseLeadingProfileFlag(token, tokens[index + 1])
-    if (parsed === undefined) break
-    if (profile !== undefined) {
-      throw new Error('duplicate AgentTeams profile flag')
+    if (parsed !== undefined) {
+      if (profile !== undefined) {
+        throw new Error('duplicate AgentTeams profile flag')
+      }
+      profile = parsed.name
+      index += parsed.consumed
+      continue
     }
-    profile = parsed.name
-    index += parsed.consumed
+    if (token === '--economy') {
+      operatingMode = 'economy'
+      index += 1
+      continue
+    }
+    if (token === '--normal') {
+      operatingMode = 'normal'
+      index += 1
+      continue
+    }
+    if (token.startsWith('--mode=') || token.startsWith('mode=')) {
+      const val = token.split('=')[1]?.trim().toLowerCase()
+      if (val === 'economy' || val === 'normal') {
+        operatingMode = val as 'normal' | 'economy'
+        index += 1
+        continue
+      }
+    }
+    if ((token === '--mode' || token === 'mode') && tokens[index + 1]) {
+      const val = tokens[index + 1]?.trim().toLowerCase()
+      if (val === 'economy' || val === 'normal') {
+        operatingMode = val as 'normal' | 'economy'
+        index += 2
+        continue
+      }
+    }
+    break
   }
   const goal = tokens.slice(index).join(' ')
-  return profile === undefined ? { goal } : { goal, profile }
+  return {
+    goal,
+    ...profile !== undefined ? { profile } : {},
+    ...operatingMode !== undefined ? { operatingMode } : {},
+  }
 }
 
 /**

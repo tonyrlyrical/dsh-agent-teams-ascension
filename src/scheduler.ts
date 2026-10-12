@@ -36,7 +36,7 @@ import {
 import { contractStaleness, isVerdictKind, taskKindOf, verdictScopePatterns } from './quality-gates.ts'
 import { digestWorkspacePaths, snapshotWorkspacePaths } from './artifacts.ts'
 import type { TeamMember, TeamState, TeamTask } from './types.ts'
-import { CAVEMAN_PROMPT_INSTRUCTIONS } from './caveman/rules.ts'
+import { CAVEMAN_COMPACT_DIRECTIVE } from './caveman/rules.ts'
 import { compressPayload } from './caveman/proxy-engine.ts'
 
 /** Per-dependency output cap in the assignment prompt. */
@@ -294,7 +294,7 @@ Attempt: ${ticket.attempt}
 Attempt id: ${ticket.attemptId}
 
 ${ticket.operatingMode === 'economy'
-  ? `Claim task ${ticket.taskId} (attempt_id=${ticket.attemptId}). Mark in_progress first, then completed or failed. Submit required structured fields for quality kinds. Send message to captain and become idle. (If prerequisite outputs were truncated, full task details are in agent_teams_status.)\n\n${CAVEMAN_PROMPT_INSTRUCTIONS}`
+  ? `Claim task ${ticket.taskId} (attempt_id=${ticket.attemptId}). Mark in_progress first, then completed or failed. Submit required structured fields for quality kinds. Send message to captain and become idle. (If prerequisite outputs were truncated, full task details are in agent_teams_status.)\n\n${CAVEMAN_COMPACT_DIRECTIVE}`
   : `Call agent_teams_claim_task for ${ticket.taskId}; it will return this same attempt_id. Include attempt_id=${ticket.attemptId} in every agent_teams_update_task call. If it is rejected as stale, stop work because the task was reassigned. claimed cannot jump to completed. Mark in_progress first, then completed or failed. Include attempt_id on every update. Then send_message to captain with source_task_id and source_attempt_id and become idle.
 When finishing: use status=completed only when the task's success criteria are satisfied; use status=failed when blocking findings or validation failures mean downstream work must not proceed; include a concise output in either case. Quality kinds must submit structured fields: review/requirements need verdict=pass to complete (needs_revision/reject must fail with findings); implementation/repair/verification/integration need acceptanceResults and commandsRun, while implementation/repair also need in-scope changedPaths. Use status values "passed" or "failed" inside those arrays. After the work and verification finish, call agent_teams_update_task immediately; do not wait for captain confirmation and do not continue exploring. Do not approve your own implementation. Mail is not a formal next review. Completed work must not be repeated to attach late evidence: call update_task on the original task with its attempt_id and acceptanceResults/commandsRun/evidence_note; supplements are append-only and cannot change its verdict. Treat the dependency results above as source material. Do not ignore them. Work only this task and only its in-scope paths in this turn.`}
 

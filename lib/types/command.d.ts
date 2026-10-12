@@ -20,6 +20,6 @@ declare module '@deepseek-ai/dsh-llm' {
 export declare function profileCommandName(profileName: string): string | undefined;
 export declare function invokedAgentTeamsInvocation(messages: readonly UserMessage[], getProfiles?: () => Record<string, TeamProfileConfig>): AgentTeamsInvocation | undefined;
 export declare function invokedAgentTeamsGoal(messages: readonly UserMessage[]): string | undefined;
-export declare function buildActivationDirective(goal: string, profile?: string, taskPlanning?: 'captain' | 'seed'): string;
+export declare function buildActivationDirective(goal: string, profile?: string, taskPlanning?: 'captain' | 'seed', operatingMode?: 'normal' | 'economy'): string;
 export declare function registerAgentTeamsCommand(ctx: Context, getProfiles?: () => Record<string, TeamProfileConfig>): void;
 export declare function installAgentTeamsGestureBoundary(ctx: Context, getProfiles?: () => Record<string, TeamProfileConfig>): void;

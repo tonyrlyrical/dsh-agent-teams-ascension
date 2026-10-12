@@ -2090,7 +2090,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): Agen
         }
         if (args.output !== undefined) {
           if (fresh.operatingMode === 'economy') {
-            const comp = compressPayload(args.output, { minBytes: 300 })
+            const comp = compressPayload(args.output, { minBytes: 300, teamId: fresh.id, stateRoot })
             task.output = comp.wasCompressed ? comp.text : args.output
           } else {
             task.output = args.output
@@ -2405,7 +2405,18 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): Agen
     },
     async execute(args: { token_report?: 'summary' | 'detailed' | 'csv'; recovery_id?: string }, exec) {
       if (args.recovery_id) {
-        const rec = recoverPayload(args.recovery_id)
+        let teamId: string | undefined
+        let stateRoot: string | undefined
+        try {
+          const caller = requireCaptain(exec)
+          const workspace = workspaceOf(caller)
+          stateRoot = stateRootOf(workspace, config)
+          const located = await requireParticipantTeam(ctx, workspace, config, caller)
+          teamId = located.id
+        } catch {
+          // Fallback if caller is outside active team context
+        }
+        const rec = recoverPayload(args.recovery_id, undefined, { teamId, stateRoot })
         if (rec.ok) {
           return {
             recovered_payload: {
@@ -2709,8 +2720,19 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): Agen
           : `[caveman-proxy: recovery failed: ${value.error}]`,
       }],
     },
-    async execute(args) {
-      const rec = recoverPayload(args.recovery_id)
+    async execute(args, exec) {
+      let teamId: string | undefined
+      let stateRoot: string | undefined
+      try {
+        const caller = requireCaptain(exec)
+        const workspace = workspaceOf(caller)
+        stateRoot = stateRootOf(workspace, config)
+        const located = await requireParticipantTeam(ctx, workspace, config, caller)
+        teamId = located.id
+      } catch {
+        // Fallback if caller is outside active team context
+      }
+      const rec = recoverPayload(args.recovery_id, undefined, { teamId, stateRoot })
       if (!rec.ok) {
         return {
           ok: false,

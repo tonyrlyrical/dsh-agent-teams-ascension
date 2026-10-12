@@ -3,9 +3,9 @@
  *
  * Implements structural compression for tool results, tabular CSVs, test logs,
  * stack traces and JSON diagnostics, with an in-process content-addressable
- * store for exact, byte-for-byte payload recovery.
+ * store and optional disk persistence for exact, byte-for-byte payload recovery.
  *
- * Inspired by JuliusBrussee/caveman (Apache-2.0).
+ * Inspired by the brevity philosophy of JuliusBrussee/caveman (Apache-2.0).
  *
  * @module dsh-agent-teams/caveman/proxy-engine
  */
@@ -17,6 +17,17 @@ export interface CompressionOptions {
     minSavingsPercent?: number;
     /** Force compression even if savings are marginal. Default: false. */
     force?: boolean;
+    /** Team ID to associate this payload with for session isolation. */
+    teamId?: string;
+    /** State root directory for disk-backed persistence. */
+    stateRoot?: string;
+}
+/** Options for payload recovery. */
+export interface RecoveryOptions {
+    /** Team ID to verify caller belongs to the same team. */
+    teamId?: string;
+    /** State root directory to look for disk-persisted payload if memory cache misses. */
+    stateRoot?: string;
 }
 /** Result of a payload compression attempt. */
 export interface CompressionResult {
@@ -37,7 +48,8 @@ export interface CompressionResult {
 }
 /**
  * In-process Content-Addressable Storage for uncompressed payloads.
- * Implements LRU eviction and memory bounds (max 50 MB, max 500 entries).
+ * Implements LRU eviction, memory bounds (max 50 MB, max 500 entries),
+ * and disk-backed persistence for cross-restart survivability.
  */
 export declare class CavemanPayloadStore {
     private readonly store;
@@ -51,13 +63,21 @@ export declare class CavemanPayloadStore {
         ttlMs?: number;
     });
     /**
-     * Stores a payload and returns a stable recovery ID.
+     * Stores a payload and returns a stable recovery ID, or null if capacity exceeded.
      */
-    storePayload(content: string, category: string): string;
+    storePayload(content: string, category: string, options?: {
+        teamId?: string;
+        stateRoot?: string;
+    }): string | null;
     /**
-     * Retrieves an exact original payload by recovery ID.
+     * Retrieves an exact original payload by recovery ID, with team isolation and disk fallback.
      */
-    getPayload(id: string): string | undefined;
+    getPayload(id: string, options?: RecoveryOptions): {
+        ok: boolean;
+        content?: string;
+        originalBytes?: number;
+        error?: string;
+    };
     /**
      * Checks if an ID exists in the store without evicting.
      */
@@ -84,13 +104,47 @@ export declare class CavemanPayloadStore {
 /** Global singleton payload store. */
 export declare const defaultPayloadStore: CavemanPayloadStore;
 /**
+ * Structural compressors
+ */
+/**
+ * Compresses CSV or TSV data.
+ * Keeps column headers, row counts, sample data, and numeric range summaries.
+ */
+export declare function compressCsv(text: string): {
+    compressed: string;
+    savings: boolean;
+};
+/**
+ * Compresses test runner output (Node test runner, Jest, Mocha, Pytest, Vitest, etc.).
+ * Retains failures, test count summary, duration, and collapses passing lines.
+ */
+export declare function compressTestLogs(text: string): {
+    compressed: string;
+    savings: boolean;
+};
+/**
+ * Compresses deep stack traces.
+ * Keeps all error headers before the first stack frame, top 5 frames, and the bottom-most frame.
+ */
+export declare function compressStackTrace(text: string): {
+    compressed: string;
+    savings: boolean;
+};
+/**
+ * Compresses verbose JSON arrays or large nested structures.
+ */
+export declare function compressJson(text: string): {
+    compressed: string;
+    savings: boolean;
+};
+/**
  * Main compression entry point for tool execution outputs and external observations.
  */
 export declare function compressPayload(rawText: string, options?: CompressionOptions, store?: CavemanPayloadStore): CompressionResult;
 /**
  * Retrieves the exact, unmodified original payload by recovery ID.
  */
-export declare function recoverPayload(recoveryId: string, store?: CavemanPayloadStore): {
+export declare function recoverPayload(recoveryId: string, store?: CavemanPayloadStore, options?: RecoveryOptions): {
     ok: boolean;
     content?: string;
     originalBytes?: number;

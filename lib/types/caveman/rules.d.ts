@@ -22,12 +22,17 @@
  *
  * @module dsh-agent-teams/caveman/rules
  */
-/** Core system instructions for Caveman terse output formatting. */
+/** Detailed system instructions for Caveman terse output formatting. */
 export declare const CAVEMAN_PROMPT_INSTRUCTIONS: string;
+/**
+ * Ultra-low-overhead directive (~24 tokens / 95 chars) for recurring task ticket injection.
+ * Prevents input prompt inflation on short tasks while enforcing identical brevity.
+ */
+export declare const CAVEMAN_COMPACT_DIRECTIVE = "[Brevity: Answer directly line 1. Zero filler/fluff. Code, paths, and errors verbatim.]";
 /**
  * Returns prompt guidance for a task or member under Caveman Economy mode.
  */
-export declare function formatCavemanInstruction(prefix?: string): string;
+export declare function formatCavemanInstruction(prefix?: string, compact?: boolean): string;
 /**
  * Applies synthetic Caveman-style text compression for benchmarking and offline evaluations.
  * Preserves code blocks, paths, negations, and numbers while removing conversational filler.
