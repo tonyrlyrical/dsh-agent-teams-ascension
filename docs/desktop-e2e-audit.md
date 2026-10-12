@@ -106,22 +106,17 @@ if (entry.teamId && options?.teamId && entry.teamId !== options.teamId) {
 - **Pila instalada:** Tarball `@nanmicoder/dsh-agent-teams@0.1.23.tgz` inyectado en `C:\Users\Anthony R\.dsh\profiles\desktop\node_modules\@nanmicoder\dsh-agent-teams`.
 
 ### 3.2. Auditoría de la Interfaz Gráfica (GUI) y Mecanismos de Activación
-- **¿Existe un botón o selector visual en el composer vacío sin escribir `/agent-teams`?**
-  **NO.** Tras auditar el código fuente del cliente React (`src/client/index.tsx`, `TeamChatEntry.tsx`, `AgentTeamsCard.tsx`), se constata de forma fehaciente que el botón de cabecera `TeamChatEntry` ("Agent Teams") condiciona su renderizado a que ya exista un equipo creado para la sesión:
-  ```typescript
-  export function TeamChatEntry({ sessionId, t }) {
-    const { teams, archivedTeams } = useSyncExternalStore(...)
-    const team = [...teams, ...archivedTeams].find(team => team.captainSessionId === sessionId)
-    if (!team) return null // No se muestra si no hay equipo previo
-    return <button className={css.chatEntry} ...>{t('workspace.focus')}</button>
-  }
-  ```
-  Por tanto, la activación por defecto en una sesión limpia se realiza mediante el comando de barra:
-  - `/agent-teams <objetivo>` (modo Normal por defecto).
-  - `/agent-teams --economy <objetivo>` o `/agent-teams --mode economy <objetivo>` (modo Economía con Caveman).
-  - O mediante los alias autogenerados de perfiles como `/agent-teams-<perfil> <objetivo>`.
+- **Estado Original en el Código Base:**
+  Al auditar el código cliente React original (`src/client/TeamChatEntry.tsx`), se constató que el botón de cabecera en el slot `conversation.session.header.actions` retornaba `null` cuando no existía un equipo previo en la sesión (`if (!team) return null`). Por tanto, la activación en sesiones vacías requería teclear manualmente el comando de barra `/agent-teams [--economy]`.
+- **Implementación y Mejora del Selector Visual (Ascension):**
+  Para ofrecer activación visual directa sin necesidad de teclear comandos en la terminal/composer, se implementó en `src/client/TeamChatEntry.tsx` y `src/client/AgentTeamsCard.module.css`:
+  1. **Lanzador Visual (`data-agent-teams-launcher`):** Cuando no hay equipo activo en la sesión, el slot de cabecera renderiza un botón interactivo "Agent Teams" acompañado de un selector desplegable de modo (`⚡ Economy` vs `Normal`).
+  2. **Inyección en Composer (`populateComposerWithTeamCommand`):** Al hacer clic en el botón o cambiar el selector, se inserta o actualiza automáticamente el comando `/agent-teams [--economy] ` en el cuadro de texto del composer (compatible con `textarea` y elementos `contenteditable`) y se sitúa el foco listo para ingresar el objetivo.
+  3. **Indicador de Modo Activo:** Cuando el equipo está en ejecución, el botón muestra la insignia del modo operativo (`⚡ Economy` o `Normal`).
+  4. **Compatibilidad Estricta:** Diseñado utilizando las variables de estilo oficiales de DeepSeek Harness (`--dsw-alias-*`) y el slot host oficial `conversation.session.header.actions`, manteniendo intacto el ecosistema visual de la aplicación.
+  5. **Verificación Automatizada:** Suite de pruebas unitarias `scripts/composer-launcher.test.mjs` (5 pruebas cubriendo textarea, contenteditable, reemplazo de prefijo y fallback seguro) integrada en `pnpm verify:ascension`.
 - **Apertura de paneles y visualización:**
-  Una vez ejecutado el comando, el plugin registra la tarjeta interactiva `AgentTeamsCard` en el flujo de conversación, despliega el plan por etapas (*staged plan* con `approval="required"` para revisión del usuario), y activa la pestaña derecha `Agent Teams` en la barra lateral con el árbol y grafo DAG interactivo.
+  Una vez lanzado el equipo, el plugin registra la tarjeta interactiva `AgentTeamsCard` en el flujo de conversación, despliega el plan por etapas (*staged plan* con `approval="required"` para revisión del usuario), y activa la pestaña derecha `Agent Teams` en la barra lateral con el árbol y grafo DAG interactivo.
 - **Sincronización de pantalla:**
   En entornos Windows de escritorio virtual o aislamiento de sesión (`WinSta0`), el script de integración `scripts/switch-to-harness-desktop.ps1` conmuta la superficie activa mediante `SwitchDesktop`, garantizando que la ventana de Harness Desktop esté visible y al frente en la pantalla principal del usuario.
 
@@ -167,7 +162,7 @@ if (entry.teamId && options?.teamId && entry.teamId !== options.teamId) {
 |---|---|:---:|---|
 | **Seguridad de Recuperación** | Fallo cerrado, validación de llamador y aislamiento de disco | **APROBADO** | Commit `cb47e18`. 33/33 tests verdes. |
 | **Instalación en Harness Desktop** | Paquete funcional en perfil real de DeepSeek Harness | **APROBADO** | Montado en `profiles/desktop` v0.1.23. |
-| **Activación en GUI** | Identificación de mecanismos de entrada (botón vs comando) | **APROBADO** | Documentado: no hay botón en composer vacío; usa `/agent-teams`. |
+| **Activación en GUI** | Selector visual de modo y botón en cabecera sin teclear | **APROBADO** | Implementado en `TeamChatEntry.tsx` con `populateComposerWithTeamCommand`. 5 tests pasan. |
 | **Visualización DAG y Paneles** | Renderizado de estados y panel de actividades | **APROBADO** | Panel `TEAM_TAB_ID` y tarjetas `TeamTurnCard` activos. |
 | **Motor Caveman** | Compresión sin pérdida, recuperación SHA-256 e impacto de prompt | **APROBADO** | Verificada sobrecarga de prompt vs ahorro en payloads. |
 | **Contabilidad de Tokens** | No duplicidad, separación de intentos y retención de caché | **APROBADO** | Verificado en `token-ledger.json` y canario de integración. |
