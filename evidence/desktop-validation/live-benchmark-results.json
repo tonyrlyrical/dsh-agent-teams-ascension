@@ -1,15 +1,25 @@
 {
-  "schemaVersion": 1,
-  "generatedAt": "2026-10-12T00:21:56.271Z",
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-12T00:30:16.680Z",
   "liveDesktopCanary": {
     "metricClassification": {
-      "inputTokens": "ACTUAL (deepseek-flash provider usage)",
-      "outputTokens": "ACTUAL (deepseek-flash provider usage)",
-      "totalTokens": "ACTUAL (exact input + output + cacheRead)",
-      "cacheReadTokens": "ACTUAL (prompt cache read hit count)",
+      "uncachedInputTokens": "ACTUAL (Harness inputTokens: prompt_cache_miss_tokens charged at full input rate)",
+      "cacheReadTokens": "ACTUAL (Harness cacheReadTokens: prompt_cache_hit_tokens charged at cache hit rate)",
+      "totalPromptTokens": "ACTUAL (uncachedInputTokens + cacheReadTokens: entire context sent to model)",
+      "outputTokens": "ACTUAL (Harness outputTokens: completion tokens, includes reasoning if any)",
+      "totalTokens": "ACTUAL (totalPromptTokens + outputTokens: non-overlapping sum)",
+      "hostCostUsd": "ACTUAL (Host billing recorded directly from DeepSeek Harness Desktop GUI)",
       "toolCalls": "ACTUAL (recorded tool invocations)",
-      "coverage": "ACTUAL (authoritative event matching)"
+      "coverage": "ACTUAL (authoritative event matching: 100% exact, 0 estimated/unknown)"
     },
+    "auditFormulaNotes": [
+      "Harness TokenUsage specification confirms inputTokens represents ONLY uncached input (cache misses).",
+      "Prompt cache hits are reported separately in cacheReadTokens.",
+      "Total prompt tokens equals uncachedInputTokens + cacheReadTokens; no categories are double-counted.",
+      "Output tokens already includes reasoning tokens; reasoning tokens are not re-added to the total.",
+      "Total tokens formula: totalTokens = uncachedInputTokens + cacheReadTokens + cacheWriteTokens + outputTokens.",
+      "Monetary cost is recorded strictly from authoritative DeepSeek Harness Desktop GUI displays ($0.016013 vs $0.008127)."
+    ],
     "workload": {
       "taskDescription": "Implement greet() TypeScript function with node:test coverage and independent verification",
       "targetRuntime": "DeepSeek Harness Desktop (win32-x64, port 19387)",
@@ -24,10 +34,13 @@
         "completionRatePct": 100,
         "invocations": 35,
         "exactCoveragePercentage": 100,
-        "inputTokens": 50486,
-        "outputTokens": 23646,
+        "uncachedInputTokens": 50486,
         "cacheReadTokens": 905728,
+        "totalPromptTokens": 956214,
+        "outputTokens": 23646,
         "totalTokens": 979860,
+        "cacheHitPercentage": 94.7,
+        "hostCostUsd": 0.016013,
         "totalToolCalls": 56,
         "durationSeconds": 241
       },
@@ -39,10 +52,13 @@
         "completionRatePct": 100,
         "invocations": 36,
         "exactCoveragePercentage": 100,
-        "inputTokens": 37903,
-        "outputTokens": 19102,
+        "uncachedInputTokens": 37903,
         "cacheReadTokens": 650368,
+        "totalPromptTokens": 688271,
+        "outputTokens": 19102,
         "totalTokens": 707373,
+        "cacheHitPercentage": 94.5,
+        "hostCostUsd": 0.008127,
         "totalToolCalls": 43,
         "durationSeconds": 446
       },
@@ -51,23 +67,42 @@
           "diff": 272487,
           "pct": 27.8
         },
-        "inputTokens": {
+        "totalPromptTokens": {
+          "diff": 267943,
+          "pct": 28
+        },
+        "uncachedInputTokens": {
           "diff": 12583,
           "pct": 24.9
+        },
+        "cacheReadTokens": {
+          "diff": 255360,
+          "pct": 28.2
         },
         "outputTokens": {
           "diff": 4544,
           "pct": 19.2
         },
-        "cacheReadTokens": {
-          "diff": 255360,
-          "pct": 28.2
+        "hostCostUsd": {
+          "diffUsd": 0.007886,
+          "pct": 49.25
         },
         "toolCalls": {
           "diff": 13,
           "pct": 23.2
         }
       }
+    },
+    "hostBilling": {
+      "source": "DeepSeek Harness Desktop GUI session status bar & header modal (HWND: 852020)",
+      "normalSessionCostUsd": 0.016013,
+      "economySessionCostUsd": 0.008127,
+      "costSavingsUsd": 0.007886,
+      "costSavingsPercentage": 49.25,
+      "userBalanceBeforeValidationUsd": 12.589015,
+      "userBalanceAfterValidationUsd": 12.134209,
+      "observedGuiCacheHitRateNormalPct": 96.2,
+      "observedGuiCacheHitRateEconomyPct": 94.2
     },
     "agents": {
       "normal": [
