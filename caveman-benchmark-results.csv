@@ -1,0 +1,31 @@
+ScenarioId,ScenarioName,Topology,DeliveredBytes,OriginalBytes,InputTokens,OutputTokens,TotalTokens,Concurrency,RecoveryVerified
+"1","Scenario 1: Tabular CSV Telemetry (100 Rows)","baseline",6155,6155,2641,132,2773,4,true
+"1","Scenario 1: Tabular CSV Telemetry (100 Rows)","normal",6155,6155,2115,39,2154,4,true
+"1","Scenario 1: Tabular CSV Telemetry (100 Rows)","economy",6155,6155,869,25,894,2,true
+"1","Scenario 1: Tabular CSV Telemetry (100 Rows)","economy_skill",6155,6155,1061,25,1086,2,true
+"1","Scenario 1: Tabular CSV Telemetry (100 Rows)","economy_proxy",492,6155,492,25,517,2,true
+"1","Scenario 1: Tabular CSV Telemetry (100 Rows)","economy_both",492,6155,684,25,709,2,true
+"2","Scenario 2: CI Test Log Triage (89 Tests, 1 Failure)","baseline",926,926,1071,134,1205,4,true
+"2","Scenario 2: CI Test Log Triage (89 Tests, 1 Failure)","normal",926,926,1081,41,1122,4,true
+"2","Scenario 2: CI Test Log Triage (89 Tests, 1 Failure)","economy",926,926,602,27,629,2,true
+"2","Scenario 2: CI Test Log Triage (89 Tests, 1 Failure)","economy_skill",926,926,794,27,821,2,true
+"2","Scenario 2: CI Test Log Triage (89 Tests, 1 Failure)","economy_proxy",479,926,488,27,515,2,true
+"2","Scenario 2: CI Test Log Triage (89 Tests, 1 Failure)","economy_both",479,926,680,27,707,2,true
+"3","Scenario 3: Deep Stack Trace (28 Frames)","baseline",2579,2579,1746,131,1877,4,true
+"3","Scenario 3: Deep Stack Trace (28 Frames)","normal",2579,2579,1758,38,1796,4,true
+"3","Scenario 3: Deep Stack Trace (28 Frames)","economy",2579,2579,868,24,892,2,true
+"3","Scenario 3: Deep Stack Trace (28 Frames)","economy_skill",2579,2579,1060,24,1084,2,true
+"3","Scenario 3: Deep Stack Trace (28 Frames)","economy_proxy",677,2579,537,24,561,2,true
+"3","Scenario 3: Deep Stack Trace (28 Frames)","economy_both",677,2579,729,24,753,2,true
+"4","Scenario 4: Large JSON Diagnostics (50 Services)","baseline",20702,20702,6278,133,6411,4,true
+"4","Scenario 4: Large JSON Diagnostics (50 Services)","normal",20702,20702,2116,40,2156,4,true
+"4","Scenario 4: Large JSON Diagnostics (50 Services)","economy",20702,20702,870,26,896,2,true
+"4","Scenario 4: Large JSON Diagnostics (50 Services)","economy_skill",20702,20702,1062,26,1088,2,true
+"4","Scenario 4: Large JSON Diagnostics (50 Services)","economy_proxy",1172,20702,663,26,689,2,true
+"4","Scenario 4: Large JSON Diagnostics (50 Services)","economy_both",1172,20702,855,26,881,2,true
+"5","Scenario 5: Multi-Stage Deep DAG Pipeline (4 Stages)","baseline",30362,30362,11527,506,12033,4,true
+"5","Scenario 5: Multi-Stage Deep DAG Pipeline (4 Stages)","normal",30362,30362,6217,136,6353,4,true
+"5","Scenario 5: Multi-Stage Deep DAG Pipeline (4 Stages)","economy",30362,30362,2646,79,2725,2,true
+"5","Scenario 5: Multi-Stage Deep DAG Pipeline (4 Stages)","economy_skill",30362,30362,3414,82,3496,2,true
+"5","Scenario 5: Multi-Stage Deep DAG Pipeline (4 Stages)","economy_proxy",2820,30362,1982,79,2061,2,true
+"5","Scenario 5: Multi-Stage Deep DAG Pipeline (4 Stages)","economy_both",2820,30362,2750,82,2832,2,true

@@ -89,6 +89,13 @@ export interface AgentTeamsRuntime {
     discardStagedTeam(captain: Agent, teamId: string): Promise<{
         teamId: string;
     }>;
+    resumeTeam(captain: Agent, teamId: string, reason?: string, options?: {
+        rearmCancelled?: boolean;
+    }): Promise<{
+        status: string;
+        team_id: string;
+        reason: string;
+    }>;
 }
 export declare function haltTeamWork(input: {
     ctx: Context;

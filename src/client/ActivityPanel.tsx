@@ -49,6 +49,7 @@ import {
 } from './activity-model.ts'
 import {
   ACTIVITY_HALT_URL,
+  ACTIVITY_RESUME_URL,
   getActivityMonitorTargetsSnapshot,
   getActivitySnapshotsSnapshot,
   startActivityPolling,
@@ -505,6 +506,8 @@ export function TeamSection({ team, modelDirectory, onContinuePlanning, onDiscar
   const [stopOpen, setStopOpen] = useState(false)
   const [stopping, setStopping] = useState(false)
   const [stopError, setStopError] = useState('')
+  const [resuming, setResuming] = useState(false)
+  const [resumeError, setResumeError] = useState('')
   const discarded = historic && team.phase === 'staged'
   const stopped = !historic && team.halted === true
   const busyCount = team.members.filter((member) => member.activity === 'working').length
@@ -548,6 +551,37 @@ export function TeamSection({ team, modelDirectory, onContinuePlanning, onDiscar
       setStopping(false)
     }
   }
+
+  const resumeTeam = async (): Promise<void> => {
+    if (resuming) return
+    setResuming(true)
+    setResumeError('')
+    try {
+      const response = await fetch(ACTIVITY_RESUME_URL, {
+        method: 'POST',
+        cache: 'no-store',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          sessionId: team.captainSessionId,
+          teamId: team.teamId,
+          reason: 'Resumed by user from Activity Panel',
+        }),
+      })
+      if (!response.ok) {
+        let message = t('team.resumeFailed', { message: 'request failed' })
+        try {
+          const body = await response.json() as { error?: unknown }
+          if (typeof body.error === 'string' && body.error.trim() !== '') message = body.error
+        } catch {}
+        throw new Error(message)
+      }
+    } catch (error: unknown) {
+      setResumeError(t('team.resumeFailed', { message: error instanceof Error ? error.message : String(error) }))
+    } finally {
+      setResuming(false)
+    }
+  }
+
   return (
     <>
       <section className={css.team} data-team-id={team.teamId} data-workspace-team={workspace || undefined}>
@@ -555,6 +589,32 @@ export function TeamSection({ team, modelDirectory, onContinuePlanning, onDiscar
           <span className={css.teamName} title={team.name}>{team.name}</span>
           {historic && <span className={css.historicPill}>{t(discarded ? 'team.discarded' : 'team.ended')}</span>}
           {stopped && <span className={css.historicPill}>{t('team.stopped')}</span>}
+          {stopped && (
+            <button
+              type="button"
+              className={css.teamStopButton}
+              style={{
+                background: 'var(--dsw-alias-state-success-subtle, rgba(34,197,94,0.15))',
+                color: 'var(--dsw-alias-state-success-primary, #16a34a)',
+                border: '1px solid currentColor',
+                borderRadius: '4px',
+                fontSize: '11px',
+                fontWeight: 600,
+                padding: '1px 8px',
+                cursor: 'pointer',
+                marginLeft: '4px',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '4px',
+              }}
+              aria-label={t('team.resume')}
+              title={`${t('team.resume')} (Reanudar equipo)`}
+              disabled={resuming}
+              onClick={() => { void resumeTeam() }}
+            >
+              {resuming ? t('team.resuming') : t('team.resume')}
+            </button>
+          )}
           {team.operatingMode && (
             <span
               className={css.historicPill}
@@ -570,6 +630,24 @@ export function TeamSection({ team, modelDirectory, onContinuePlanning, onDiscar
               title={team.operatingMode === 'economy' ? 'Economy Mode (Ahorro)' : 'Normal Mode'}
             >
               {team.operatingMode === 'economy' ? 'Economy' : 'Normal'}
+            </span>
+          )}
+          {team.operatingMode === 'economy' && (
+            <span
+              className={css.historicPill}
+              style={{
+                background: 'rgba(168, 85, 247, 0.15)',
+                color: '#9333ea',
+                border: '1px solid currentColor',
+                fontWeight: 600,
+                fontSize: '11px',
+                padding: '1px 6px',
+                borderRadius: '4px',
+                marginLeft: '2px',
+              }}
+              title="Caveman: Output Brevity Skill & Structural Proxy Active"
+            >
+              Caveman: Active
             </span>
           )}
           {team.budgetExceeded && (
@@ -594,7 +672,10 @@ export function TeamSection({ team, modelDirectory, onContinuePlanning, onDiscar
             <span data-stat="tasks">{t('team.stats.completed', { completed: completedCount, total: team.tasks.length })}</span>
             <span data-stat="messages">{t('team.stats.messages', { count: team.messageCount })}</span>
             {team.tokenAccounting !== undefined && (
-              <span data-stat="tokens" title={`Input: ${team.tokenAccounting.exactInputTokens.toLocaleString()}, Output: ${team.tokenAccounting.exactOutputTokens.toLocaleString()}, Coverage: ${team.tokenAccounting.exactCoveragePercentage}%`}>
+              <span
+                data-stat="tokens"
+                title={`Input: ${team.tokenAccounting.exactInputTokens.toLocaleString()}, Output: ${team.tokenAccounting.exactOutputTokens.toLocaleString()}, Cache Read: ${team.tokenAccounting.exactCacheReadTokens.toLocaleString()}, Coverage: ${team.tokenAccounting.exactCoveragePercentage}% (ACTUAL / AUTHORITATIVE)`}
+              >
                 Tokens: {team.tokenAccounting.exactTotalTokens.toLocaleString()}
               </span>
             )}
@@ -620,13 +701,18 @@ export function TeamSection({ team, modelDirectory, onContinuePlanning, onDiscar
               type="button"
               className={css.teamStopButton}
               aria-label={t('team.stop')}
-              title={t('team.stop')}
+              title={`${t('team.stop')} (Terminar lo antes posible)`}
               onClick={() => { setStopError(''); setStopOpen(true) }}
             >
               <IconStopFill16 />
             </button>
           )}
         </header>
+        {resumeError !== '' && (
+          <div style={{ color: '#dc2626', fontSize: '11px', padding: '4px 8px', background: 'rgba(239,68,68,0.1)' }} role="alert">
+            {resumeError}
+          </div>
+        )}
 
         {team.phase === 'staged' && !historic && modelDirectory !== undefined && onContinuePlanning !== undefined && onDiscarded !== undefined && (
           <StagingPlanEditor

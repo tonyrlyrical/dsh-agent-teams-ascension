@@ -494,6 +494,57 @@ export function apply(ctx: Context, config: Config): void {
 
     ctx.effect(() => webServer.register({
       kind: 'exact',
+      path: '/plugins/dsh-agent-teams/resume',
+      handler: async (req, res) => {
+        if (req.method !== 'POST') {
+          res.writeHead(405, { allow: 'POST', 'cache-control': 'no-store' })
+          res.end()
+          return
+        }
+        let payload: Record<string, unknown>
+        try {
+          payload = await readJsonRequest(req)
+        } catch (error: unknown) {
+          res.writeHead(error instanceof RequestBodyError ? error.status : 400, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
+          res.end(JSON.stringify({ error: error instanceof Error ? error.message : 'invalid request body' }))
+          return
+        }
+        const sessionId = typeof payload.sessionId === 'string' ? payload.sessionId.trim() : ''
+        const teamId = typeof payload.teamId === 'string' ? payload.teamId.trim() : ''
+        const reason = typeof payload.reason === 'string' && payload.reason.trim() !== '' ? payload.reason.trim() : 'Resumed from Activity Panel'
+        if (sessionId === '' || teamId === '') {
+          res.writeHead(400, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
+          res.end(JSON.stringify({ error: 'sessionId and teamId are required' }))
+          return
+        }
+        const captain = ctx.agents.get(sessionId as import('@deepseek-ai/dsh-session').SessionId)
+        if (captain === undefined) {
+          res.writeHead(409, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
+          res.end(JSON.stringify({ error: 'captain session is not attached' }))
+          return
+        }
+        const workspace = captain.session.header.cwd ?? process.cwd()
+        const stateRoot = join(workspace, resolved.stateDir)
+        const team = await findTeamByCaptain(stateRoot, captain.id, await leadIdentityOfAsync(ctx, captain.session))
+        if (team === undefined || team.id !== teamId) {
+          res.writeHead(404, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
+          res.end(JSON.stringify({ error: 'team not found for this captain' }))
+          return
+        }
+        try {
+          const result = await agentTeamsRuntime.resumeTeam(captain, teamId, reason, { rearmCancelled: true })
+          res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
+          res.end(JSON.stringify({ ok: true, ...result }))
+        } catch (error: unknown) {
+          ctx.logger.warn(`agent-teams: resume failed for ${teamId}: ${String(error)}`)
+          res.writeHead(500, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
+          res.end(JSON.stringify({ error: error instanceof Error ? error.message : 'failed to resume the team' }))
+        }
+      },
+    }), 'agent-teams: resume route')
+
+    ctx.effect(() => webServer.register({
+      kind: 'exact',
       path: '/plugins/dsh-agent-teams/plan',
       handler: async (req, res) => {
         if (req.method !== 'POST') {

@@ -96,6 +96,7 @@ import {
   exportReportToCsv,
   type TeamTokenReport,
 } from './token-accounting.ts'
+import { compressPayload, recoverPayload } from './caveman/proxy-engine.ts'
 
 export { steerCaptainReport } from './members.ts'
 
@@ -166,6 +167,7 @@ export interface AgentTeamsRuntime {
   approveStagedTeam(captain: Agent, teamId: string, signal?: AbortSignal): Promise<{ teamId: string; members: number; tasks: number }>
   continueStagedPlanning(captain: Agent, teamId: string): Promise<{ teamId: string; alreadyWaiting: boolean }>
   discardStagedTeam(captain: Agent, teamId: string): Promise<{ teamId: string }>
+  resumeTeam(captain: Agent, teamId: string, reason?: string, options?: { rearmCancelled?: boolean }): Promise<{ status: string; team_id: string; reason: string }>
 }
 
 /** The caller agent, or a loud failure for non-agent callers. */
@@ -922,6 +924,59 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): Agen
     return { teamId: discarded.teamId }
   }
 
+  const resumeTeam = async (
+    captain: Agent,
+    teamId: string,
+    reason?: string,
+    options?: { rearmCancelled?: boolean },
+  ): Promise<{ status: string; team_id: string; reason: string }> => {
+    const resumeReason = reason && reason.trim() !== '' ? reason.trim() : 'Resumed team execution'
+    const workspace = workspaceOf(captain)
+    const stateRoot = stateRootOf(workspace, config)
+    const result = await withTeamLock(teamLockKey(stateRoot, teamId), async () => {
+      const fresh = await requireFreshCaptainTeam(ctx, stateRoot, teamId, captain.id)
+      const resumed = resumeTeamState(fresh, resumeReason)
+      if (resumed.status === 'rejected') throw new Error(resumed.error ?? 'resume rejected')
+      if (resumed.status === 'resumed') {
+        fresh.halted = false
+        fresh.haltedAt = undefined
+        if (options?.rearmCancelled) {
+          // Re-arm unstarted/cancelled tasks back to pending
+          for (const task of fresh.tasks) {
+            if (task.status === 'cancelled') {
+              task.status = 'pending'
+              task.output = undefined
+              task.assignee = undefined
+            }
+          }
+          for (const member of fresh.members) {
+            if (member.status === 'removed') continue
+            member.status = 'idle'
+          }
+        }
+        await writeTeam(stateRoot, fresh)
+        appendTeamEvent(ctx, captainSessionOf(ctx, fresh.captainSessionId, captain.session), 'agent-teams/team-resumed', {
+          teamId: fresh.id,
+          reason: resumeReason,
+        })
+      }
+      return {
+        status: resumed.status,
+        team_id: fresh.id,
+        reason: resumeReason,
+        team: fresh,
+      }
+    })
+    if (result.status === 'resumed') {
+      await scheduler.kickTeam(workspace, teamId, await liveLeadAnchorAgent(ctx, result.team, captain))
+    }
+    return {
+      status: result.status,
+      team_id: result.team_id,
+      reason: result.reason,
+    }
+  }
+
   const runtime: AgentTeamsRuntime = {
     isPendingMember: memberSelections.isPendingMember,
     updateStagedPlan,
@@ -929,6 +984,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): Agen
     approveStagedTeam,
     continueStagedPlanning,
     discardStagedTeam,
+    resumeTeam,
   }
 
   ctx.tools.register(defineTool({
@@ -2032,7 +2088,14 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): Agen
           if (transition !== undefined) throw new Error(transition)
           task.status = args.status
         }
-        if (args.output !== undefined) task.output = args.output
+        if (args.output !== undefined) {
+          if (fresh.operatingMode === 'economy') {
+            const comp = compressPayload(args.output, { minBytes: 300 })
+            task.output = comp.wasCompressed ? comp.text : args.output
+          } else {
+            task.output = args.output
+          }
+        }
         if (args.verdict !== undefined) task.verdict = args.verdict as ReviewVerdict
         if (findings !== undefined) task.findings = findings
         if (input.changedPaths !== undefined) task.changedPaths = input.changedPaths
@@ -2331,12 +2394,28 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): Agen
         enum: ['summary', 'detailed', 'csv'],
         description: 'Optional on-demand token accounting report format ("summary", "detailed", or "csv").',
       },
+      recovery_id: {
+        type: 'string',
+        description: 'Optional recovery ID from a Caveman Proxy compressed block to retrieve uncompressed original payload.',
+      },
     },
     output: {
       schema: { type: 'object', additionalProperties: true, properties: {} },
       render: (_args, value) => [{ type: 'text', text: renderStatus(value) }],
     },
-    async execute(args: { token_report?: 'summary' | 'detailed' | 'csv' }, exec) {
+    async execute(args: { token_report?: 'summary' | 'detailed' | 'csv'; recovery_id?: string }, exec) {
+      if (args.recovery_id) {
+        const rec = recoverPayload(args.recovery_id)
+        if (rec.ok) {
+          return {
+            recovered_payload: {
+              recovery_id: args.recovery_id,
+              original_bytes: rec.originalBytes,
+              content: rec.content,
+            },
+          } as any
+        }
+      }
       const caller = requireCaptain(exec)
       const workspace = workspaceOf(caller)
       const stateRoot = stateRootOf(workspace, config)
@@ -2519,6 +2598,7 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): Agen
     description: 'Explicitly resume a halted team. Requires a non-empty reason. Does not recreate cancelled tasks; only still-pending work is scheduled.',
     parameters: {
       reason: { type: 'string', required: true, description: 'Why the team is being resumed.' },
+      rearm_cancelled: { type: 'boolean', description: 'Whether to re-arm cancelled tasks back to pending so execution continues.' },
     },
     output: {
       schema: {
@@ -2537,32 +2617,11 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): Agen
           : `Team ${value.team_id} resumed (${value.reason}).`,
       }],
     },
-    async execute(args, exec) {
+    async execute(args: { reason: string; rearm_cancelled?: boolean }, exec) {
       const captain = requireCaptain(exec)
       const workspace = workspaceOf(captain)
-      const stateRoot = stateRootOf(workspace, config)
       const team = await requireCaptainTeam(ctx, workspace, config, captain)
-      const result = await withTeamLock(teamLockKey(stateRoot, team.id), async () => {
-        const fresh = await requireFreshCaptainTeam(ctx, stateRoot, team.id, captain.id)
-        const resumed = resumeTeamState(fresh, args.reason)
-        if (resumed.status === 'rejected') throw new Error(resumed.error ?? 'resume rejected')
-        if (resumed.status === 'resumed') {
-          fresh.halted = false
-          fresh.haltedAt = undefined
-          await writeTeam(stateRoot, fresh)
-          appendTeamEvent(ctx, captainSessionOf(ctx, fresh.captainSessionId, captain.session), 'agent-teams/team-resumed', {
-            teamId: fresh.id,
-            reason: args.reason,
-          })
-        }
-        return {
-          status: resumed.status,
-          team_id: fresh.id,
-          reason: args.reason,
-        }
-      })
-      if (result.status === 'resumed') await scheduler.kickTeam(workspace, team.id, await liveLeadAnchorAgent(ctx, team, captain))
-      return result
+      return runtime.resumeTeam(captain, team.id, args.reason, { rearmCancelled: args.rearm_cancelled })
     },
   }))
 
@@ -2624,6 +2683,50 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): Agen
       return { deleted: true, team_name: team.name }
     },
   }))
+
+  ctx.tools.register(defineTool({
+    name: 'agent_teams_recover_payload',
+    description: 'Retrieve the exact uncompressed raw payload using a recovery ID generated by the Caveman Proxy engine. Available to both captain and members.',
+    parameters: {
+      recovery_id: { type: 'string', required: true, description: 'The recovery ID emitted in a [caveman-proxy: ...] block.' },
+    },
+    output: {
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          ok: { type: 'boolean', required: true },
+          recovery_id: { type: 'string', required: true },
+          original_bytes: { type: 'number' },
+          content: { type: 'string' },
+          error: { type: 'string' },
+        },
+      },
+      render: (_args, value) => [{
+        type: 'text',
+        text: value.ok
+          ? `[caveman-proxy: recovered ${value.original_bytes} bytes for ${value.recovery_id}]\n${value.content}`
+          : `[caveman-proxy: recovery failed: ${value.error}]`,
+      }],
+    },
+    async execute(args) {
+      const rec = recoverPayload(args.recovery_id)
+      if (!rec.ok) {
+        return {
+          ok: false,
+          recovery_id: args.recovery_id,
+          error: rec.error ?? 'payload not found or expired',
+        }
+      }
+      return {
+        ok: true,
+        recovery_id: args.recovery_id,
+        original_bytes: rec.originalBytes,
+        content: rec.content,
+      }
+    },
+  }))
+
   return runtime
 }
 

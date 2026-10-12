@@ -95,9 +95,10 @@ async function runHarnessCanaryAudit() {
     }
     applyPlugin(ctx, pluginConfig)
 
-    // Verify all 14 tools registered
-    assert.equal(toolRegistry.size, 14, 'Must register exactly 14 tools')
-    console.log('✔ Harness tool registration verified: 14 tools mounted.')
+    // Verify all 15 tools registered (14 core + 1 Caveman recovery)
+    assert.equal(toolRegistry.size, 15, 'Must register exactly 15 tools')
+    assert.ok(toolRegistry.has('agent_teams_recover_payload'), 'Must register agent_teams_recover_payload')
+    console.log('✔ Harness tool registration verified: 15 tools mounted.')
 
     // 2. Set up caller sessions
     const captainSessionId = 'sess-captain-001'
