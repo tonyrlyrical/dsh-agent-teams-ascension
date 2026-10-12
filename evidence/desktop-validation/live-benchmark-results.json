@@ -1,0 +1,383 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-10-12T00:21:56.271Z",
+  "liveDesktopCanary": {
+    "metricClassification": {
+      "inputTokens": "ACTUAL (deepseek-flash provider usage)",
+      "outputTokens": "ACTUAL (deepseek-flash provider usage)",
+      "totalTokens": "ACTUAL (exact input + output + cacheRead)",
+      "cacheReadTokens": "ACTUAL (prompt cache read hit count)",
+      "toolCalls": "ACTUAL (recorded tool invocations)",
+      "coverage": "ACTUAL (authoritative event matching)"
+    },
+    "workload": {
+      "taskDescription": "Implement greet() TypeScript function with node:test coverage and independent verification",
+      "targetRuntime": "DeepSeek Harness Desktop (win32-x64, port 19387)",
+      "model": "DeepSeek-V41-Flash High (provider: deepseek-account)"
+    },
+    "metrics": {
+      "normal": {
+        "mode": "normal",
+        "teamId": "hello-world-ts",
+        "tasksTotal": 2,
+        "tasksCompleted": 2,
+        "completionRatePct": 100,
+        "invocations": 35,
+        "exactCoveragePercentage": 100,
+        "inputTokens": 50486,
+        "outputTokens": 23646,
+        "cacheReadTokens": 905728,
+        "totalTokens": 979860,
+        "totalToolCalls": 56,
+        "durationSeconds": 241
+      },
+      "economy": {
+        "mode": "economy",
+        "teamId": "hello-world-economy",
+        "tasksTotal": 2,
+        "tasksCompleted": 2,
+        "completionRatePct": 100,
+        "invocations": 36,
+        "exactCoveragePercentage": 100,
+        "inputTokens": 37903,
+        "outputTokens": 19102,
+        "cacheReadTokens": 650368,
+        "totalTokens": 707373,
+        "totalToolCalls": 43,
+        "durationSeconds": 446
+      },
+      "savingsVsNormal": {
+        "totalTokens": {
+          "diff": 272487,
+          "pct": 27.8
+        },
+        "inputTokens": {
+          "diff": 12583,
+          "pct": 24.9
+        },
+        "outputTokens": {
+          "diff": 4544,
+          "pct": 19.2
+        },
+        "cacheReadTokens": {
+          "diff": 255360,
+          "pct": 28.2
+        },
+        "toolCalls": {
+          "diff": 13,
+          "pct": 23.2
+        }
+      }
+    },
+    "agents": {
+      "normal": [
+        {
+          "agentName": "captain",
+          "role": "captain",
+          "provider": "deepseek-account",
+          "model": "deepseek-flash",
+          "tasksHandled": 0,
+          "invocationCount": 11,
+          "retriesCount": 0,
+          "exactInvocations": 11,
+          "estimatedInvocations": 0,
+          "unknownInvocations": 0,
+          "exactInputTokens": 5283,
+          "exactOutputTokens": 5394,
+          "exactTotalTokens": 391989,
+          "cacheReadTokens": 381312,
+          "reasoningTokens": 0,
+          "estimatedTokens": 0,
+          "toolCallsCount": 13,
+          "totalDurationMs": 0,
+          "outcome": "completed"
+        },
+        {
+          "agentName": "implementer",
+          "role": "TypeScript engineer",
+          "provider": "deepseek-account",
+          "model": "deepseek-flash",
+          "tasksHandled": 1,
+          "invocationCount": 9,
+          "retriesCount": 0,
+          "exactInvocations": 9,
+          "estimatedInvocations": 0,
+          "unknownInvocations": 0,
+          "exactInputTokens": 16046,
+          "exactOutputTokens": 5777,
+          "exactTotalTokens": 156479,
+          "cacheReadTokens": 134656,
+          "reasoningTokens": 0,
+          "estimatedTokens": 0,
+          "toolCallsCount": 15,
+          "totalDurationMs": 0,
+          "outcome": "failed"
+        },
+        {
+          "agentName": "verifier",
+          "role": "Independent verifier",
+          "provider": "deepseek-account",
+          "model": "deepseek-flash",
+          "tasksHandled": 1,
+          "invocationCount": 15,
+          "retriesCount": 0,
+          "exactInvocations": 15,
+          "estimatedInvocations": 0,
+          "unknownInvocations": 0,
+          "exactInputTokens": 29157,
+          "exactOutputTokens": 12475,
+          "exactTotalTokens": 431392,
+          "cacheReadTokens": 389760,
+          "reasoningTokens": 0,
+          "estimatedTokens": 0,
+          "toolCallsCount": 28,
+          "totalDurationMs": 0,
+          "outcome": "failed"
+        }
+      ],
+      "economy": [
+        {
+          "agentName": "captain",
+          "role": "captain",
+          "provider": "deepseek-account",
+          "model": "deepseek-flash",
+          "tasksHandled": 0,
+          "invocationCount": 16,
+          "retriesCount": 0,
+          "exactInvocations": 16,
+          "estimatedInvocations": 0,
+          "unknownInvocations": 0,
+          "exactInputTokens": 5060,
+          "exactOutputTokens": 4840,
+          "exactTotalTokens": 345260,
+          "cacheReadTokens": 335360,
+          "reasoningTokens": 0,
+          "estimatedTokens": 0,
+          "toolCallsCount": 13,
+          "totalDurationMs": 0,
+          "outcome": "completed"
+        },
+        {
+          "agentName": "implementer",
+          "role": "TypeScript implementer",
+          "provider": "deepseek-account",
+          "model": "deepseek-flash",
+          "tasksHandled": 1,
+          "invocationCount": 12,
+          "retriesCount": 0,
+          "exactInvocations": 12,
+          "estimatedInvocations": 0,
+          "unknownInvocations": 0,
+          "exactInputTokens": 17064,
+          "exactOutputTokens": 7521,
+          "exactTotalTokens": 221193,
+          "cacheReadTokens": 196608,
+          "reasoningTokens": 0,
+          "estimatedTokens": 0,
+          "toolCallsCount": 17,
+          "totalDurationMs": 0,
+          "outcome": "failed"
+        },
+        {
+          "agentName": "verifier",
+          "role": "Independent verifier",
+          "provider": "deepseek-account",
+          "model": "deepseek-flash",
+          "tasksHandled": 1,
+          "invocationCount": 8,
+          "retriesCount": 0,
+          "exactInvocations": 8,
+          "estimatedInvocations": 0,
+          "unknownInvocations": 0,
+          "exactInputTokens": 15779,
+          "exactOutputTokens": 6741,
+          "exactTotalTokens": 140920,
+          "cacheReadTokens": 118400,
+          "reasoningTokens": 0,
+          "estimatedTokens": 0,
+          "toolCallsCount": 13,
+          "totalDurationMs": 0,
+          "outcome": "failed"
+        }
+      ]
+    }
+  },
+  "syntheticMicrobenchmarks": {
+    "timestamp": "2026-10-12T00:18:33.549Z",
+    "benchmarkVersion": "1.1.0",
+    "benchmarkType": "OFFLINE_SYNTHETIC_MICROBENCHMARK",
+    "metricClassification": {
+      "inputTokens": "ESTIMATED",
+      "outputTokens": "SYNTHETIC",
+      "totalTokens": "SYNTHETIC_ESTIMATED_HYBRID",
+      "concurrency": "ACTUAL"
+    },
+    "methodologyNotes": [
+      "Input tokens are ESTIMATED from prompt and dependency output text length via Math.ceil(length / 4).",
+      "Output tokens are SYNTHETIC based on typical response length models.",
+      "Total tokens reflect prompt template text reduction and DAG pruning in offline simulation, not live cloud API billing.",
+      "Real Harness session events, retries, and telemetry capture are verified separately via scripts/harness-canary-audit.mjs."
+    ],
+    "scenarios": [
+      {
+        "scenario": "Scenario 1: Small Self-Contained Task",
+        "mode": "baseline",
+        "invocations": 1,
+        "inputTokens": 611,
+        "outputTokens": 180,
+        "totalTokens": 791,
+        "peakWorkers": 1
+      },
+      {
+        "scenario": "Scenario 1: Small Self-Contained Task",
+        "mode": "normal",
+        "invocations": 1,
+        "inputTokens": 587,
+        "outputTokens": 180,
+        "totalTokens": 767,
+        "peakWorkers": 1
+      },
+      {
+        "scenario": "Scenario 1: Small Self-Contained Task",
+        "mode": "economy",
+        "invocations": 1,
+        "inputTokens": 214,
+        "outputTokens": 120,
+        "totalTokens": 334,
+        "peakWorkers": 1
+      },
+      {
+        "scenario": "Scenario 2: Parallel Independent Subtasks (4 workers)",
+        "mode": "baseline",
+        "invocations": 4,
+        "inputTokens": 2348,
+        "outputTokens": 880,
+        "totalTokens": 3228,
+        "peakWorkers": 4
+      },
+      {
+        "scenario": "Scenario 2: Parallel Independent Subtasks (4 workers)",
+        "mode": "normal",
+        "invocations": 4,
+        "inputTokens": 2348,
+        "outputTokens": 880,
+        "totalTokens": 3228,
+        "peakWorkers": 4
+      },
+      {
+        "scenario": "Scenario 2: Parallel Independent Subtasks (4 workers)",
+        "mode": "economy",
+        "invocations": 4,
+        "inputTokens": 864,
+        "outputTokens": 600,
+        "totalTokens": 1464,
+        "peakWorkers": 2
+      },
+      {
+        "scenario": "Scenario 3: Sequential Deep DAG Pipeline (5 stages)",
+        "mode": "baseline",
+        "invocations": 5,
+        "inputTokens": 11813,
+        "outputTokens": 1750,
+        "totalTokens": 13563,
+        "peakWorkers": 1
+      },
+      {
+        "scenario": "Scenario 3: Sequential Deep DAG Pipeline (5 stages)",
+        "mode": "normal",
+        "invocations": 5,
+        "inputTokens": 2604,
+        "outputTokens": 1750,
+        "totalTokens": 4354,
+        "peakWorkers": 1
+      },
+      {
+        "scenario": "Scenario 3: Sequential Deep DAG Pipeline (5 stages)",
+        "mode": "economy",
+        "invocations": 5,
+        "inputTokens": 948,
+        "outputTokens": 1000,
+        "totalTokens": 1948,
+        "peakWorkers": 1
+      },
+      {
+        "scenario": "Scenario 4: Large Intermediate Result Passing",
+        "mode": "baseline",
+        "invocations": 1,
+        "inputTokens": 1541,
+        "outputTokens": 300,
+        "totalTokens": 1841,
+        "peakWorkers": 1
+      },
+      {
+        "scenario": "Scenario 4: Large Intermediate Result Passing",
+        "mode": "normal",
+        "invocations": 1,
+        "inputTokens": 1541,
+        "outputTokens": 300,
+        "totalTokens": 1841,
+        "peakWorkers": 1
+      },
+      {
+        "scenario": "Scenario 4: Large Intermediate Result Passing",
+        "mode": "economy",
+        "invocations": 1,
+        "inputTokens": 460,
+        "outputTokens": 180,
+        "totalTokens": 640,
+        "peakWorkers": 1
+      },
+      {
+        "scenario": "Scenario 5: Worker Failure & Fault Recovery (2 turns)",
+        "mode": "baseline",
+        "invocations": 2,
+        "inputTokens": 1033,
+        "outputTokens": 270,
+        "totalTokens": 1303,
+        "peakWorkers": 1
+      },
+      {
+        "scenario": "Scenario 5: Worker Failure & Fault Recovery (2 turns)",
+        "mode": "normal",
+        "invocations": 2,
+        "inputTokens": 1033,
+        "outputTokens": 270,
+        "totalTokens": 1303,
+        "peakWorkers": 1
+      },
+      {
+        "scenario": "Scenario 5: Worker Failure & Fault Recovery (2 turns)",
+        "mode": "economy",
+        "invocations": 2,
+        "inputTokens": 371,
+        "outputTokens": 190,
+        "totalTokens": 561,
+        "peakWorkers": 1
+      }
+    ],
+    "aggregate": {
+      "baseline": {
+        "totalInputTokens": 17346,
+        "totalOutputTokens": 3380,
+        "totalTokens": 20726,
+        "totalInvocations": 13
+      },
+      "normal": {
+        "totalInputTokens": 8113,
+        "totalOutputTokens": 3380,
+        "totalTokens": 11493,
+        "totalInvocations": 13,
+        "savingsTokensVsBaseline": 9233,
+        "savingsPercentageVsBaseline": 44.5
+      },
+      "economy": {
+        "totalInputTokens": 2857,
+        "totalOutputTokens": 2090,
+        "totalTokens": 4947,
+        "totalInvocations": 13,
+        "savingsTokensVsBaseline": 15779,
+        "savingsPercentageVsBaseline": 76.1
+      }
+    }
+  }
+}

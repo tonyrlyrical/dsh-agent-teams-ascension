@@ -1,0 +1,14 @@
+# TEAM RUN SUMMARY
+TeamId,TeamName,OperatingMode,Status,TotalTasks,CompletedTasks,ExactCoveragePct,ExactTotalTokens,EstimatedTokens,TotalInvocations,TotalDurationMs
+"hello-world-economy","hello-world-economy","economy","completed",2,2,100%,707373,0,36,446358
+
+# PER-AGENT BREAKDOWN
+AgentName,Role,Provider,Model,TasksHandled,Invocations,ExactTotalTokens,CacheTokens,ReasoningTokens,ToolCalls,Outcome
+"captain","captain","deepseek-account","deepseek-flash",0,16,345260,335360,0,13,"completed"
+"implementer","TypeScript implementer","deepseek-account","deepseek-flash",1,12,221193,196608,0,17,"failed"
+"verifier","Independent verifier","deepseek-account","deepseek-flash",1,8,140920,118400,0,13,"failed"
+
+# PER-TASK BREAKDOWN
+TaskId,Subject,Owner,Status,Attempts,Invocations,ExactTotalTokens,DurationMs
+"t1","Implement typed greeting function in hello-world-economy","implementer","completed",1,7,133428,0
+"t2","Independently verify the hello-world-economy greeting contract","verifier","completed",1,4,70152,0

@@ -1,0 +1,14 @@
+# TEAM RUN SUMMARY
+TeamId,TeamName,OperatingMode,Status,TotalTasks,CompletedTasks,ExactCoveragePct,ExactTotalTokens,EstimatedTokens,TotalInvocations,TotalDurationMs
+"hello-world-ts","hello-world-ts","normal","completed",2,2,100%,979860,0,35,241362
+
+# PER-AGENT BREAKDOWN
+AgentName,Role,Provider,Model,TasksHandled,Invocations,ExactTotalTokens,CacheTokens,ReasoningTokens,ToolCalls,Outcome
+"captain","captain","deepseek-account","deepseek-flash",0,11,391989,381312,0,13,"completed"
+"implementer","TypeScript engineer","deepseek-account","deepseek-flash",1,9,156479,134656,0,15,"failed"
+"verifier","Independent verifier","deepseek-account","deepseek-flash",1,15,431392,389760,0,28,"failed"
+
+# PER-TASK BREAKDOWN
+TaskId,Subject,Owner,Status,Attempts,Invocations,ExactTotalTokens,DurationMs
+"t1","Implement greet() TypeScript function with node:test coverage","implementer","completed",1,5,85748,0
+"t2","Independently verify greet() behavior and strict type-check","verifier","completed",1,11,319060,0

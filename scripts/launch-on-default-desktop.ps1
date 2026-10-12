@@ -1,5 +1,6 @@
 param(
-    [string]$CommandLine = '"C:\Program Files\Google\Chrome\Application\chrome.exe" --app="http://127.0.0.1:18999/?token=5G0DE-cBV7OSePtHByL2hTpL-QbADjtqn0zh949xdWg" --user-data-dir="C:\temp\chrome-dsh" --no-first-run --no-default-browser-check'
+    [string]$CommandLine = '"C:\Users\Anthony R\AppData\Local\Programs\DeepSeek Harness\DeepSeek Harness.exe"',
+    [string]$WorkingDirectory = "C:\Users\Anthony R\AppData\Local\Programs\DeepSeek Harness"
 )
 
 $source = @"
@@ -50,21 +51,26 @@ public class ProcessLauncher {
         ref STARTUPINFO lpStartupInfo,
         out PROCESS_INFORMATION lpProcessInformation);
 
-    public static string Launch(string cmd) {
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern bool CloseHandle(IntPtr hObject);
+
+    public static string Launch(string cmd, string workDir) {
         STARTUPINFO si = new STARTUPINFO();
         si.cb = Marshal.SizeOf(si);
         si.lpDesktop = @"WinSta0\Default";
 
         PROCESS_INFORMATION pi = new PROCESS_INFORMATION();
 
-        bool success = CreateProcess(null, cmd, IntPtr.Zero, IntPtr.Zero, false, 0, IntPtr.Zero, null, ref si, out pi);
+        bool success = CreateProcess(null, cmd, IntPtr.Zero, IntPtr.Zero, false, 0x00000200 /* CREATE_NEW_PROCESS_GROUP */, IntPtr.Zero, workDir, ref si, out pi);
         if (!success) {
             return "Failed CreateProcess: " + Marshal.GetLastWin32Error();
         }
+        CloseHandle(pi.hProcess);
+        CloseHandle(pi.hThread);
         return "Launched PID: " + pi.dwProcessId;
     }
 }
 "@
 
 Add-Type -TypeDefinition $source
-[ProcessLauncher]::Launch($CommandLine)
+[ProcessLauncher]::Launch($CommandLine, $WorkingDirectory)

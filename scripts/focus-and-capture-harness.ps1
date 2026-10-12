@@ -9,6 +9,7 @@ using System.Runtime.InteropServices;
 using System.Threading;
 using System.Drawing;
 using System.Drawing.Imaging;
+using System.Diagnostics;
 
 public class HarnessWindowCapture {
     [DllImport("user32.dll", SetLastError = true)]
@@ -51,6 +52,9 @@ public class HarnessWindowCapture {
     [DllImport("user32.dll")]
     public static extern bool IsWindowVisible(IntPtr hWnd);
 
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+
     public static string FocusAndCapture(string outputPath) {
         string summary = "";
         Thread t = new Thread(() => {
@@ -69,12 +73,28 @@ public class HarnessWindowCapture {
             string targetTitle = "";
             EnumWindows((hWnd, lParam) => {
                 if (IsWindowVisible(hWnd)) {
+                    uint pid;
+                    GetWindowThreadProcessId(hWnd, out pid);
                     var sb = new StringBuilder(256);
                     GetWindowText(hWnd, sb, sb.Capacity);
                     string title = sb.ToString();
-                    if (title.Contains("DeepSeek Harness")) {
+
+                    RECT winRect;
+                    GetWindowRect(hWnd, out winRect);
+                    int w = winRect.Right - winRect.Left;
+                    int h = winRect.Bottom - winRect.Top;
+
+                    bool isDsh = false;
+                    try {
+                        var p = Process.GetProcessById((int)pid);
+                        if (p.ProcessName.IndexOf("DeepSeek", StringComparison.OrdinalIgnoreCase) >= 0) {
+                            isDsh = true;
+                        }
+                    } catch {}
+
+                    if ((title.IndexOf("DeepSeek", StringComparison.OrdinalIgnoreCase) >= 0 || isDsh) && w > 400 && h > 300) {
                         targetHwnd = hWnd;
-                        targetTitle = title;
+                        targetTitle = string.IsNullOrEmpty(title) ? ("DeepSeek PID " + pid) : title;
                         return false;
                     }
                 }
@@ -94,10 +114,10 @@ public class HarnessWindowCapture {
 
             Thread.Sleep(800); // Wait for paint
 
-            RECT r;
-            GetWindowRect(targetHwnd, out r);
-            int width = r.Right - r.Left;
-            int height = r.Bottom - r.Top;
+            RECT finalRect;
+            GetWindowRect(targetHwnd, out finalRect);
+            int width = finalRect.Right - finalRect.Left;
+            int height = finalRect.Bottom - finalRect.Top;
 
             if (width <= 0 || height <= 0) {
                 summary = "Window has invalid dimensions: " + width + "x" + height;
@@ -108,11 +128,11 @@ public class HarnessWindowCapture {
             try {
                 using (Bitmap bmp = new Bitmap(width, height)) {
                     using (Graphics g = Graphics.FromImage(bmp)) {
-                        g.CopyFromScreen(r.Left, r.Top, 0, 0, new Size(width, height));
+                        g.CopyFromScreen(finalRect.Left, finalRect.Top, 0, 0, new Size(width, height));
                     }
                     bmp.Save(outputPath, ImageFormat.Png);
                 }
-                summary = "Captured '" + targetTitle + "' (" + width + "x" + height + ") at [" + r.Left + "," + r.Top + "] -> " + outputPath;
+                summary = "Captured '" + targetTitle + "' (" + width + "x" + height + ") at [" + finalRect.Left + "," + finalRect.Top + "] -> " + outputPath;
             } catch (Exception ex) {
                 summary = "Capture error: " + ex.Message;
             }
@@ -122,15 +142,17 @@ public class HarnessWindowCapture {
         t.SetApartmentState(ApartmentState.STA);
         t.Start();
         t.Join();
+
         return summary;
     }
 }
 "@
 
 $targetPath = [System.IO.Path]::GetFullPath($OutputPath)
-$dir = [System.IO.Path]::GetDirectoryName($targetPath)
-if (-not [System.IO.Directory]::Exists($dir)) {
-    [System.IO.Directory]::CreateDirectory($dir) | Out-Null
+$targetDir = [System.IO.Path]::GetDirectoryName($targetPath)
+if (-not (Test-Path $targetDir)) {
+    New-Item -ItemType Directory -Path $targetDir -Force | Out-Null
 }
+
 Add-Type -TypeDefinition $source -ReferencedAssemblies "System.Drawing"
 [HarnessWindowCapture]::FocusAndCapture($targetPath)
