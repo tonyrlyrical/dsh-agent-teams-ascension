@@ -12,7 +12,7 @@
 
 import { createHash, randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 
 /** Configuration options for payload compression. */
 export interface CompressionOptions {
@@ -122,10 +122,16 @@ export class CavemanPayloadStore {
     // Disk-backed persistence for restart recovery
     if (options?.stateRoot && options?.teamId) {
       try {
-        const teamDir = join(options.stateRoot, options.teamId, '.caveman-payloads')
-        mkdirSync(teamDir, { recursive: true })
-        const filePath = join(teamDir, `${sanitizePayloadId(id)}.json`)
-        writeFileSync(filePath, JSON.stringify(entry), 'utf8')
+        const rootResolved = resolve(options.stateRoot)
+        const safeTeamId = sanitizePayloadId(options.teamId)
+        const teamDir = resolve(rootResolved, safeTeamId, '.caveman-payloads')
+        if (teamDir.startsWith(rootResolved)) {
+          mkdirSync(teamDir, { recursive: true })
+          const filePath = resolve(teamDir, `${sanitizePayloadId(id)}.json`)
+          if (filePath.startsWith(teamDir)) {
+            writeFileSync(filePath, JSON.stringify(entry), 'utf8')
+          }
+        }
       } catch {
         // Disk persistence is best-effort; in-memory cache remains available
       }
@@ -136,6 +142,7 @@ export class CavemanPayloadStore {
 
   /**
    * Retrieves an exact original payload by recovery ID, with team isolation and disk fallback.
+   * Fails closed if the payload belongs to a team and caller team context is absent or mismatched.
    */
   getPayload(
     id: string,
@@ -153,9 +160,11 @@ export class CavemanPayloadStore {
       if (Date.now() - entry.createdAt > this.ttlMs) {
         this.delete(cleanId)
       } else {
-        // Team isolation check
-        if (entry.teamId && options?.teamId && entry.teamId !== options.teamId) {
-          return { ok: false, error: `Unauthorized: payload ${cleanId} belongs to another team` }
+        // Team isolation check: fail closed if payload is bound to a team
+        if (entry.teamId) {
+          if (!options?.teamId || entry.teamId !== options.teamId) {
+            return { ok: false, error: `Unauthorized: payload ${cleanId} belongs to another team or caller team context is missing` }
+          }
         }
         // Refresh LRU order: delete and re-insert
         this.store.delete(cleanId)
@@ -167,21 +176,29 @@ export class CavemanPayloadStore {
     // 2. Check disk persistence fallback
     if (options?.stateRoot && options?.teamId) {
       try {
-        const filePath = join(options.stateRoot, options.teamId, '.caveman-payloads', `${sanitizePayloadId(cleanId)}.json`)
-        if (existsSync(filePath)) {
-          const raw = readFileSync(filePath, 'utf8')
-          const diskEntry = JSON.parse(raw) as StoredPayload
-          if (diskEntry && diskEntry.content !== undefined) {
-            if (diskEntry.teamId && options.teamId && diskEntry.teamId !== options.teamId) {
-              return { ok: false, error: `Unauthorized: payload ${cleanId} belongs to another team` }
+        const rootResolved = resolve(options.stateRoot)
+        const safeTeamId = sanitizePayloadId(options.teamId)
+        const teamDir = resolve(rootResolved, safeTeamId, '.caveman-payloads')
+        if (teamDir.startsWith(rootResolved)) {
+          const safeFile = sanitizePayloadId(cleanId)
+          const filePath = resolve(teamDir, `${safeFile}.json`)
+          if (filePath.startsWith(teamDir) && existsSync(filePath)) {
+            const raw = readFileSync(filePath, 'utf8')
+            const diskEntry = JSON.parse(raw) as StoredPayload
+            if (diskEntry && diskEntry.content !== undefined) {
+              if (diskEntry.teamId) {
+                if (!options.teamId || diskEntry.teamId !== options.teamId) {
+                  return { ok: false, error: `Unauthorized: payload ${cleanId} belongs to another team or caller team context is missing` }
+                }
+              }
+              // Re-populate in-memory cache
+              if (diskEntry.byteSize <= this.maxTotalBytes) {
+                this.evictIfNeeded(diskEntry.byteSize)
+                this.store.set(cleanId, diskEntry)
+                this.totalBytes += diskEntry.byteSize
+              }
+              return { ok: true, content: diskEntry.content, originalBytes: diskEntry.byteSize }
             }
-            // Re-populate in-memory cache
-            if (diskEntry.byteSize <= this.maxTotalBytes) {
-              this.evictIfNeeded(diskEntry.byteSize)
-              this.store.set(cleanId, diskEntry)
-              this.totalBytes += diskEntry.byteSize
-            }
-            return { ok: true, content: diskEntry.content, originalBytes: diskEntry.byteSize }
           }
         }
       } catch {

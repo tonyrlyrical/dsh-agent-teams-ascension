@@ -71,6 +71,7 @@ export declare class CavemanPayloadStore {
     }): string | null;
     /**
      * Retrieves an exact original payload by recovery ID, with team isolation and disk fallback.
+     * Fails closed if the payload belongs to a team and caller team context is absent or mismatched.
      */
     getPayload(id: string, options?: RecoveryOptions): {
         ok: boolean;

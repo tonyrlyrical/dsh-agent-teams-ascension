@@ -2721,18 +2721,27 @@ export function registerAgentTeamsTools(ctx: Context, config: ToolsConfig): Agen
       }],
     },
     async execute(args, exec) {
-      let teamId: string | undefined
-      let stateRoot: string | undefined
-      try {
-        const caller = requireCaptain(exec)
-        const workspace = workspaceOf(caller)
-        stateRoot = stateRootOf(workspace, config)
-        const located = await requireParticipantTeam(ctx, workspace, config, caller)
-        teamId = located.id
-      } catch {
-        // Fallback if caller is outside active team context
+      if (!exec.agent) {
+        return {
+          ok: false,
+          recovery_id: args.recovery_id,
+          error: 'Unauthorized: agent_teams tools require an authenticated calling agent (exec.agent was undefined)',
+        }
       }
-      const rec = recoverPayload(args.recovery_id, undefined, { teamId, stateRoot })
+      const caller = exec.agent
+      const workspace = workspaceOf(caller)
+      const stateRoot = stateRootOf(workspace, config)
+      let team: TeamState
+      try {
+        team = await requireParticipantTeam(ctx, workspace, config, caller)
+      } catch (err) {
+        return {
+          ok: false,
+          recovery_id: args.recovery_id,
+          error: `Unauthorized: caller does not participate in any active team: ${err instanceof Error ? err.message : String(err)}`,
+        }
+      }
+      const rec = recoverPayload(args.recovery_id, undefined, { teamId: team.id, stateRoot })
       if (!rec.ok) {
         return {
           ok: false,
